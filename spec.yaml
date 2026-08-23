@@ -1,0 +1,70 @@
+schemaVersion: "2"
+kind: sandbox
+name: pi-chatgpt-plus
+displayName: Pi (ChatGPT Plus)
+description: Pi coding agent configured for ChatGPT Plus through OpenAI Codex OAuth
+
+sandbox:
+  image: docker/sandbox-templates:shell-docker
+  entrypoint:
+    - pi
+    - --provider
+    - openai-codex
+
+agentInstructions:
+  filename: AGENTS.md
+  content: |
+    You are running inside a Docker sandbox with Docker available.
+    The workspace is mounted at its absolute host path. Passwordless sudo is
+    available for installing system packages when needed.
+
+permissions:
+  network:
+    allow:
+      - registry.npmjs.org
+      - pi.dev
+      - auth.openai.com
+      - chatgpt.com
+
+credentials:
+  - service: openai-codex
+    description: ChatGPT Plus OAuth credentials used by Pi's OpenAI Codex provider
+    oauth:
+      tokenEndpoint:
+        host: auth.openai.com
+        path: /oauth/token
+      credentialFile:
+        path: "~/.pi/agent/auth.json"
+        structure:
+          openai-codex:
+            type: oauth
+            access: "{{.AccessToken}}"
+            refresh: "{{.RefreshToken}}"
+            expires: "{{.ExpiresAt}}"
+      responseFields:
+        accessToken: access_token
+        refreshToken: refresh_token
+        expiresIn: expires_in
+        scope: scope
+      passthrough: true
+
+environment:
+  variables:
+    PI_SKIP_VERSION_CHECK: "1"
+    PI_TELEMETRY: "0"
+
+setup:
+  install:
+    - command: 'npm config set proxy "$HTTP_PROXY" && npm config set https-proxy "$HTTP_PROXY" && i=0; until npm install -g --ignore-scripts --maxsockets=1 --fetch-timeout=600000 @earendil-works/pi-coding-agent; do i=$((i+1)); [ "$i" -ge 5 ] && exit 1; echo "Retrying ($i/5)..."; done'
+      user: "1000"
+      description: Configure npm proxy and install Pi globally (with retries)
+  files:
+    - path: /home/agent/.pi/agent/settings.json
+      content: |
+        {
+          "defaultProvider": "openai-codex",
+          "enableInstallTelemetry": false
+        }
+      mode: "0600"
+      onlyIfMissing: true
+      description: Default Pi to the ChatGPT subscription provider
