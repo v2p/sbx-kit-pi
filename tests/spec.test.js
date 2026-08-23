@@ -104,8 +104,9 @@ test("host launcher isolates persistent sessions by workspace", () => {
     launcher,
     /session_dir="\$HOME\/pi-sessions-backup\/\$\{project_name}-\$\{workspace_hash:0:12}"/,
   );
-  assert.match(launcher, /PI_CODING_AGENT_SESSION_DIR=\$session_dir/);
+  assert.match(launcher, /pi_args=\(--session-dir "\$session_dir" "\$@"\)/);
   assert.match(launcher, /"\$workspace"\s+\\\n\s+"\$session_dir"/);
+  assert.match(launcher, /-- "\$\{pi_args\[@\]\}"/);
 
   const syntax = spawnSync("bash", ["-n", path.join(root, "scripts", "run")], {
     encoding: "utf8",

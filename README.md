@@ -24,6 +24,19 @@ On the first launch:
 
 Use `/model` to select another Codex model.
 
+To reattach to the same sandbox later, run:
+
+```console
+./scripts/run --attach
+```
+
+Pass Pi resume flags after `--attach`:
+
+```console
+./scripts/run --attach --resume
+./scripts/run --attach --continue
+```
+
 ## Session persistence
 
 The launcher stores sessions in a project-specific host directory:
@@ -33,9 +46,9 @@ The launcher stores sessions in a project-specific host directory:
 ```
 
 The hash avoids collisions between projects with the same directory name. The
-launcher mounts only that directory and sets Pi's
-`PI_CODING_AGENT_SESSION_DIR`. Other Pi state remains under `~/.pi/agent/` in
-the sandbox; refreshed OAuth credentials can be restored when it is recreated.
+launcher mounts only that directory and passes it to Pi with `--session-dir`.
+Other Pi state remains under `~/.pi/agent/` in the sandbox; refreshed OAuth
+credentials can be restored when it is recreated.
 
 Additional workspaces are fixed when a sandbox is created, so remove an existing
 sandbox before switching it to this launcher. Session files can contain prompts,

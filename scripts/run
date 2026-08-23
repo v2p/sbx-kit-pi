@@ -1,18 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+attach_existing=0
+if [[ ${1:-} == "--attach" ]]; then
+  attach_existing=1
+  shift
+fi
+
 kit_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 workspace=$(pwd -P)
 project_name=$(basename "$workspace")
+sandbox_name="pi-openai-codex-$project_name"
 workspace_hash=$(printf '%s' "$workspace" | git hash-object --stdin)
 session_dir="$HOME/pi-sessions-backup/${project_name}-${workspace_hash:0:12}"
+
+pi_args=(--session-dir "$session_dir" "$@")
+
+if (( attach_existing )); then
+  exec sbx run --name "$sandbox_name" -- "${pi_args[@]}"
+fi
 
 mkdir -p "$session_dir"
 
 exec sbx run \
+  --name "$sandbox_name" \
   --kit "$kit_dir" \
-  --env "PI_CODING_AGENT_SESSION_DIR=$session_dir" \
   pi-openai-codex \
   "$workspace" \
   "$session_dir" \
-  -- "$@"
+  -- "${pi_args[@]}"
