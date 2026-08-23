@@ -13,7 +13,7 @@ OpenAI API key or API billing.
 
 ```console
 sbx kit validate .
-sbx run --kit . pi-openai-codex
+./scripts/run
 ```
 
 On the first launch:
@@ -22,9 +22,24 @@ On the first launch:
 2. Run `/login openai-codex` in Pi.
 3. Select **Device code login (headless)** and sign in.
 
-Use `/model` to select another Codex model. Pi stores its state under
-`~/.pi/agent/`; refreshed OAuth credentials can be restored when the sandbox is
-recreated.
+Use `/model` to select another Codex model.
+
+## Session persistence
+
+The launcher stores sessions in a project-specific host directory:
+
+```text
+~/pi-sessions-backup/<project-name>-<workspace-path-hash>/
+```
+
+The hash avoids collisions between projects with the same directory name. The
+launcher mounts only that directory and sets Pi's
+`PI_CODING_AGENT_SESSION_DIR`. Other Pi state remains under `~/.pi/agent/` in
+the sandbox; refreshed OAuth credentials can be restored when it is recreated.
+
+Additional workspaces are fixed when a sandbox is created, so remove an existing
+sandbox before switching it to this launcher. Session files can contain prompts,
+source excerpts, command output, and secrets; keep the host directory private.
 
 ## Security
 

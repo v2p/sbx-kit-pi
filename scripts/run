@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+kit_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+workspace=$(pwd -P)
+project_name=$(basename "$workspace")
+workspace_hash=$(printf '%s' "$workspace" | git hash-object --stdin)
+session_dir="$HOME/pi-sessions-backup/${project_name}-${workspace_hash:0:12}"
+
+mkdir -p "$session_dir"
+
+exec sbx run \
+  --kit "$kit_dir" \
+  --env "PI_CODING_AGENT_SESSION_DIR=$session_dir" \
+  pi-openai-codex \
+  "$workspace" \
+  "$session_dir" \
+  -- "$@"

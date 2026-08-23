@@ -7,6 +7,7 @@ const YAML = require("yaml");
 
 const root = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(root, "spec.yaml"), "utf8");
+const launcher = fs.readFileSync(path.join(root, "scripts", "run"), "utf8");
 const spec = YAML.parse(source);
 
 function credential() {
@@ -76,7 +77,7 @@ test("installs the configured Pi release as the unprivileged user", () => {
   assert.equal(installs[0].user, "1000");
   assert.match(
     installs[0].command,
-    /"@earendil-works\/pi-coding-agent@\$\{PI_AGENT_VERSION\}"/,
+    /"@earendil-works\/pi-coding-agent@\$\{PI_AGENT_VERSION}"/,
   );
   assert.doesNotMatch(installs[0].command, /pi-coding-agent@(?:latest|next)(?:\s|;|$)/);
   assert.match(installs[0].command, /installed_version=\$\(pi --version\)/);
@@ -94,6 +95,22 @@ test("does not create or overwrite user settings", () => {
   assert.doesNotMatch(source, /settings\.json/);
   assert.doesNotMatch(source, /defaultProvider/);
   assert.doesNotMatch(source, /enableInstallTelemetry/);
+});
+
+test("host launcher isolates persistent sessions by workspace", () => {
+  assert.match(launcher, /workspace=\$\(pwd -P\)/);
+  assert.match(launcher, /workspace_hash=\$\(printf .*git hash-object --stdin\)/);
+  assert.match(
+    launcher,
+    /session_dir="\$HOME\/pi-sessions-backup\/\$\{project_name}-\$\{workspace_hash:0:12}"/,
+  );
+  assert.match(launcher, /PI_CODING_AGENT_SESSION_DIR=\$session_dir/);
+  assert.match(launcher, /"\$workspace"\s+\\\n\s+"\$session_dir"/);
+
+  const syntax = spawnSync("bash", ["-n", path.join(root, "scripts", "run")], {
+    encoding: "utf8",
+  });
+  assert.equal(syntax.status, 0, syntax.stderr);
 });
 
 test("does not introduce API-key configuration", () => {
