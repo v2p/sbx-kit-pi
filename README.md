@@ -1,49 +1,58 @@
-# Pi kit for ChatGPT Plus
+# Pi with OpenAI Codex
 
-This Docker Sandbox kit runs [Pi](https://github.com/earendil-works/pi) with its
-`openai-codex` provider, which uses a personal ChatGPT Plus or Pro subscription
-through OpenAI OAuth. It does not use an OpenAI API key or API billing.
+Run [Pi](https://github.com/earendil-works/pi) in a Docker Sandbox using Codex
+access from a ChatGPT subscription. Authentication uses OpenAI OAuth, not an
+OpenAI API key or API billing.
 
-## Prerequisites
+## Requirements
 
 - Docker Sandboxes with `sbx` and schema v2 OAuth credential-file support
-- A ChatGPT Plus or Pro subscription
+- A ChatGPT subscription with Codex access
 
-## Validate and run
+## Run
 
 ```console
 sbx kit validate .
-sbx run --kit . pi-chatgpt-plus
+sbx run --kit . pi-openai-codex
 ```
 
-On the first run:
+On the first launch:
 
-1. Approve the `openai-codex` OAuth credential binding when `sbx` prompts.
-2. In Pi, enter `/login openai-codex`.
-3. Select **Device code login (headless)** and complete the displayed OpenAI
-   sign-in flow with the ChatGPT account that owns the subscription.
-4. Use `/model` if you want to choose a different Codex model.
+1. Approve the `openai-codex` credential binding when prompted.
+2. Run `/login openai-codex` in Pi.
+3. Select **Device code login (headless)** and sign in.
 
-Pi stores sessions and settings under `~/.pi/agent/`. Docker's OAuth binding
-captures refreshed credentials and can render `auth.json` again when the
-sandbox is recreated.
+Use `/model` to select another Codex model. Pi stores its state under
+`~/.pi/agent/`; refreshed OAuth credentials can be restored when the sandbox is
+recreated.
 
-## Why OAuth passthrough is enabled
+## Security
 
-Docker normally masks OAuth tokens inside a sandbox. Pi's ChatGPT provider must
-decode the ChatGPT account ID from the real OAuth access-token JWT before it can
-call the Codex backend, so this kit sets `passthrough: true`. Consequently, the
-OAuth access and refresh tokens are present inside the sandbox in
-`~/.pi/agent/auth.json` (mode `0600`). Keep the sandbox and its filesystem
-private, and do not copy or share that file.
+Pi needs the real OAuth access-token JWT to determine the ChatGPT account ID, so
+the kit enables OAuth passthrough. Access and refresh tokens are therefore
+available inside the sandbox at `~/.pi/agent/auth.json` with mode `0600`. Keep
+the sandbox private and do not copy or share this file.
 
-The network allowlist is limited to npm installation, Pi's model catalog,
-OpenAI authentication, and the ChatGPT Codex backend. Pi's version check and
-install telemetry are disabled.
+Network access is restricted in `spec.yaml`. Pi's update check and telemetry are
+disabled, and the kit does not modify user settings.
+
+## Development
+
+Node.js 20 or newer is required. Run:
+
+```console
+./scripts/check
+```
+
+This installs locked test dependencies, audits them, runs the tests, and invokes
+`sbx kit validate .` when `sbx` is available. Otherwise, validation must be run
+on the Docker Sandbox host.
+
+To upgrade Pi, change `PI_AGENT_VERSION` in `spec.yaml`, then test a fresh
+sandbox and recreation of an existing one.
 
 ## Sign out
 
-Run `/logout` inside Pi to remove its local credential. If you also want to
-remove the host-side credential/binding retained by Docker Sandboxes, inspect
-and remove the corresponding `openai-codex` entry with the `sbx secret` and
-credential-binding commands supported by your installed `sbx` version.
+Run `/logout` in Pi to remove its local credential. Remove the corresponding
+`openai-codex` credential binding with the `sbx` commands supported by your
+Docker Sandboxes version if you also want to remove the host-side credential.

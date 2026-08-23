@@ -1,8 +1,8 @@
 schemaVersion: "2"
 kind: sandbox
-name: pi-chatgpt-plus
-displayName: Pi (ChatGPT Plus)
-description: Pi coding agent configured for ChatGPT Plus through OpenAI Codex OAuth
+name: pi-openai-codex
+displayName: Pi (OpenAI Codex)
+description: Pi coding agent configured for OpenAI Codex OAuth
 
 sandbox:
   image: docker/sandbox-templates:shell-docker
@@ -14,9 +14,7 @@ sandbox:
 agentInstructions:
   filename: AGENTS.md
   content: |
-    You are running inside a Docker sandbox with Docker available.
-    The workspace is mounted at its absolute host path. Passwordless sudo is
-    available for installing system packages when needed.
+    This is a Docker Sandbox with Docker access and passwordless sudo.
 
 permissions:
   network:
@@ -28,7 +26,7 @@ permissions:
 
 credentials:
   - service: openai-codex
-    description: ChatGPT Plus OAuth credentials used by Pi's OpenAI Codex provider
+    description: OAuth credentials used by Pi's OpenAI Codex provider
     oauth:
       tokenEndpoint:
         host: auth.openai.com
@@ -50,21 +48,32 @@ credentials:
 
 environment:
   variables:
+    PI_AGENT_VERSION: "0.84.2"
     PI_SKIP_VERSION_CHECK: "1"
     PI_TELEMETRY: "0"
 
 setup:
   install:
-    - command: 'npm config set proxy "$HTTP_PROXY" && npm config set https-proxy "$HTTP_PROXY" && i=0; until npm install -g --ignore-scripts --maxsockets=1 --fetch-timeout=600000 @earendil-works/pi-coding-agent; do i=$((i+1)); [ "$i" -ge 5 ] && exit 1; echo "Retrying ($i/5)..."; done'
+    - command: |
+        set -eu
+        export npm_config_proxy="${HTTP_PROXY:-}"
+        export npm_config_https_proxy="${HTTPS_PROXY:-${HTTP_PROXY:-}}"
+        attempt=1
+        delay=2
+        until npm install -g --ignore-scripts --no-audit --no-fund --maxsockets=1 --fetch-timeout=600000 "@earendil-works/pi-coding-agent@${PI_AGENT_VERSION}"; do
+          if [ "$attempt" -ge 5 ]; then
+            echo "Pi installation failed after $attempt attempts" >&2
+            exit 1
+          fi
+          echo "Pi installation failed; retrying in ${delay}s ($attempt/5)..." >&2
+          sleep "$delay"
+          attempt=$((attempt + 1))
+          delay=$((delay * 2))
+        done
+        installed_version=$(pi --version)
+        if [ "$installed_version" != "$PI_AGENT_VERSION" ]; then
+          echo "Expected Pi $PI_AGENT_VERSION, but installed $installed_version" >&2
+          exit 1
+        fi
       user: "1000"
-      description: Configure npm proxy and install Pi globally (with retries)
-  files:
-    - path: /home/agent/.pi/agent/settings.json
-      content: |
-        {
-          "defaultProvider": "openai-codex",
-          "enableInstallTelemetry": false
-        }
-      mode: "0600"
-      onlyIfMissing: true
-      description: Default Pi to the ChatGPT subscription provider
+      description: Install the pinned Pi release globally (with bounded retries)

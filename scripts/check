@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$root"
+
+printf '%s\n' '==> Installing test dependencies'
+npm ci --ignore-scripts --no-audit --no-fund
+
+printf '%s\n' '==> Auditing test dependencies'
+npm run audit
+
+printf '%s\n' '==> Running static tests'
+npm test
+
+if command -v sbx >/dev/null 2>&1; then
+  printf '%s\n' '==> Running Docker Sandbox kit validation'
+  sbx kit validate .
+else
+  printf '%s\n' '==> SKIP: sbx is unavailable; run "sbx kit validate ." on a Docker Sandbox host' >&2
+fi
