@@ -8,6 +8,7 @@ const YAML = require("yaml");
 const root = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(root, "spec.yaml"), "utf8");
 const launcher = fs.readFileSync(path.join(root, "scripts", "run"), "utf8");
+const postprocessor = fs.readFileSync(path.join(root, "extensions", "agents-postprocessor.ts"), "utf8");
 const spec = YAML.parse(source);
 
 function credential() {
@@ -104,14 +105,26 @@ test("host launcher isolates persistent sessions by workspace", () => {
     launcher,
     /session_dir="\$HOME\/pi-sessions-backup\/\$\{project_name}-\$\{workspace_hash:0:12}"/,
   );
-  assert.match(launcher, /pi_args=\(--session-dir "\$session_dir" "\$@"\)/);
+  assert.match(launcher, /cp "\$kit_dir\/extensions\/agents-postprocessor\.ts"/);
+  assert.match(launcher, /--session-dir "\$session_dir"/);
+  assert.match(launcher, /--extension "\$runtime_dir\/agents-postprocessor\.ts"/);
   assert.match(launcher, /"\$workspace"\s+\\\n\s+"\$session_dir"/);
-  assert.match(launcher, /-- "\$\{pi_args\[@\]\}"/);
+  assert.match(launcher, /-- "\$\{pi_args\[@]}"/);
 
   const syntax = spawnSync("bash", ["-n", path.join(root, "scripts", "run")], {
     encoding: "utf8",
   });
   assert.equal(syntax.status, 0, syntax.stderr);
+});
+
+test("classifies generated sandbox guidance through an isolated Pi lifecycle hook", () => {
+  assert.match(postprocessor, /pi\.on\("session_start"/);
+  assert.match(postprocessor, /pi\.on\("resources_discover"/);
+  assert.match(postprocessor, /For every instruction in the source, classify it as:/);
+  assert.match(postprocessor, /Do not drop any Docker Sandbox-specific behavior\./);
+  assert.match(postprocessor, /"--thinking", "max"/);
+  assert.match(postprocessor, /"--no-context-files"/);
+  assert.match(postprocessor, /"--no-builtin-tools"/);
 });
 
 test("does not introduce API-key configuration", () => {

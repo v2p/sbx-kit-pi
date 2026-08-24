@@ -37,6 +37,39 @@ Pass Pi resume flags after `--attach`:
 ./scripts/run --attach --continue
 ```
 
+## Docker Sandbox instruction preprocessing
+
+`scripts/run` installs a temporary Pi extension that processes the Docker
+Sandbox-generated ancestor `AGENTS.md` during `session_start`. When its source
+hash changes, the extension starts an isolated Pi subprocess and asks the
+active model to classify every source line as:
+
+- **Always:** required for correct sandbox reasoning or prevention of a
+  high-impact/recurrent mistake.
+- **On demand:** operational guidance moved verbatim, by source line range, to
+  an Agent Skill.
+- **Drop:** generic development guidance or repository-discoverable facts.
+
+The child has context files, skills, normal extensions, and built-in tools
+disabled. It can only submit a structured classification. The processor rejects
+missing, overlapping, out-of-range, or invalid skill classifications before
+writing anything.
+
+Generated skills are stored under the project session directory's `skills/`
+folder and exposed during the same startup through `resources_discover`.
+Original and processed SHA-256 hashes, the private source backup,
+and the validated classification are stored beside the generated context file
+so host and sandbox users share the same state:
+
+```text
+<AGENTS-directory>/.sbx-kit-pi/agents/<AGENTS-path-hash>/
+```
+
+If the current file matches the processed hash, no model call is made and
+missing skill files are regenerated from the cached classification. A changed
+source is classified again. If authentication, model execution, or validation
+fails, Pi reports the error and leaves the current file unchanged.
+
 ## Session persistence
 
 The launcher stores sessions in a project-specific host directory:

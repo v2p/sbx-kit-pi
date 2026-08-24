@@ -13,14 +13,24 @@ project_name=$(basename "$workspace")
 sandbox_name="pi-openai-codex-$project_name"
 workspace_hash=$(printf '%s' "$workspace" | git hash-object --stdin)
 session_dir="$HOME/pi-sessions-backup/${project_name}-${workspace_hash:0:12}"
+skills_dir="$session_dir/skills"
+runtime_dir="$session_dir/runtime/agents-postprocessor"
 
-pi_args=(--session-dir "$session_dir" "$@")
+mkdir -p "$skills_dir"
+rm -rf "$runtime_dir"
+mkdir -p "$runtime_dir"
+cp "$kit_dir/extensions/agents-postprocessor.ts" "$runtime_dir/agents-postprocessor.ts"
+cp "$kit_dir/extensions/agents-classifier-output.ts" "$runtime_dir/agents-classifier-output.ts"
+
+pi_args=(
+  --session-dir "$session_dir"
+  --extension "$runtime_dir/agents-postprocessor.ts"
+  "$@"
+)
 
 if (( attach_existing )); then
   exec sbx run --name "$sandbox_name" -- "${pi_args[@]}"
 fi
-
-mkdir -p "$session_dir"
 
 exec sbx run \
   --name "$sandbox_name" \
