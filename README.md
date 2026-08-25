@@ -37,6 +37,44 @@ Pass Pi resume flags after `--attach`:
 ./scripts/run --attach --continue
 ```
 
+## Make shortcuts
+
+Run `make help` to list the project shortcuts. Common targets are:
+
+```console
+make validate
+make test
+make audit
+make check
+make run ARGS="--model gpt-5.6-sol"
+make attach
+make resume
+make continue
+```
+
+## Install as a user command
+
+For use from any project directory on Linux, install the launcher as a symlink
+under `~/.local/bin`:
+
+```console
+make install
+cd ~/Projects/another-project
+sbx-pi
+sbx-pi --attach --resume
+```
+
+Override the destination or command name when needed:
+
+```console
+make install PREFIX="$HOME/.local" COMMAND=pi-sandbox
+```
+
+The launcher resolves its symlink back to this kit checkout, while treating the
+current directory as the project workspace. Run `make uninstall` from the same
+checkout to remove its installed command. Ensure `~/.local/bin` is in the host
+shell's `PATH`.
+
 ## Docker Sandbox instruction preprocessing
 
 `scripts/run` installs a temporary Pi extension that processes the Docker

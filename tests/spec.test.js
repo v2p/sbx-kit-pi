@@ -99,6 +99,7 @@ test("does not create or overwrite user settings", () => {
 });
 
 test("host launcher isolates persistent sessions by workspace", () => {
+  assert.match(launcher, /launcher=\$\(readlink -f/);
   assert.match(launcher, /workspace=\$\(pwd -P\)/);
   assert.match(launcher, /workspace_hash=\$\(printf .*git hash-object --stdin\)/);
   assert.match(

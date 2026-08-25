@@ -7,7 +7,8 @@ if [[ ${1:-} == "--attach" ]]; then
   shift
 fi
 
-kit_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+launcher=$(readlink -f "${BASH_SOURCE[0]}")
+kit_dir=$(cd "$(dirname "$launcher")/.." && pwd -P)
 workspace=$(pwd -P)
 project_name=$(basename "$workspace")
 sandbox_name="pi-openai-codex-$project_name"
