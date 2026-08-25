@@ -116,8 +116,11 @@ The launcher stores sessions in a project-specific host directory:
 ~/pi-sessions-backup/<project-name>-<workspace-path-hash>/
 ```
 
-The hash avoids collisions between projects with the same directory name. The
-launcher mounts only that directory and passes it to Pi with `--session-dir`.
+The hash avoids collisions between projects with the same directory name. It is
+also included in the sandbox name, for example
+`pi-openai-codex-<project>-<workspace-path-hash>`, so each absolute workspace
+gets a distinct sandbox. The launcher mounts only the session directory and
+passes it to Pi with `--session-dir`.
 Other Pi state remains under `~/.pi/agent/` in the sandbox; refreshed OAuth
 credentials can be restored when it is recreated.
 
