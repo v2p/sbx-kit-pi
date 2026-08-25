@@ -108,6 +108,11 @@ missing skill files are regenerated from the cached classification. A changed
 source is classified again. If authentication, model execution, or validation
 fails, Pi reports the error and leaves the current file unchanged.
 
+When changing this kit's extension code, restart the Pi process (exit and run
+`./scripts/run --attach` again) to load the updated extension; recreating the
+sandbox or repeating OAuth login is not required unless Pi reports missing
+provider authentication.
+
 ## Session persistence
 
 The launcher stores sessions in a project-specific host directory:

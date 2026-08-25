@@ -103,6 +103,17 @@ test("host launcher has valid Bash syntax", () => {
   assert.equal(syntax.status, 0, syntax.stderr);
 });
 
+test("AGENTS classifier waits for a resolved authenticated model", () => {
+  const extension = fs.readFileSync(path.join(root, "extensions", "agents-postprocessor.ts"), "utf8");
+  assert.match(extension, /function selectedModel/);
+  assert.match(extension, /model\.provider === "unknown"/);
+  assert.match(extension, /model\.id === "unknown"/);
+  assert.match(extension, /getProviderAuthStatus\(ctx\.model!\.provider\)\.configured/);
+  assert.match(extension, /pi\.on\("model_select"/);
+  assert.match(extension, /pi\.on\("before_agent_start"/);
+  assert.doesNotMatch(extension, /ctx\.model \? `\$\{ctx\.model\.provider}\/\$\{ctx\.model\.id}`/);
+});
+
 test("does not introduce API-key configuration", () => {
   assert.doesNotMatch(source, /OPENAI_API_KEY/);
 });

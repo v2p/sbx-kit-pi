@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const CLASSIFIER_PROMPT = `For every instruction in the source, classify it as:
 
@@ -238,6 +238,12 @@ function numberedSource(source: string): string {
 		.join("\n");
 }
 
+function selectedModel(model: { provider?: string; id?: string } | undefined): string | undefined {
+	if (!model?.provider || !model?.id) return undefined;
+	if (model.provider === "unknown" || model.id === "unknown") return undefined;
+	return `${model.provider}/${model.id}`;
+}
+
 async function classify(source: string, cwd: string, model?: string): Promise<Classification> {
 	const temporary = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-agents-classifier-"));
 	const promptFile = path.join(temporary, "SYSTEM.md");
@@ -291,29 +297,92 @@ export default function (pi: ExtensionAPI) {
 	const sessionDirectory = argument("--session-dir") ?? path.join(os.homedir(), ".pi", "agent", "sessions");
 	const skillsDirectory = path.join(sessionDirectory, "skills");
 	let replacement: { source: string; slim: string } | undefined;
+	let pending: Promise<{ source: string; slim: string } | undefined> | undefined;
+	let authNoticeShown = false;
+
+	const notifyError = (ctx: ExtensionContext, error: unknown) => {
+		const message = `AGENTS.md classification failed: ${(error as Error).message}`;
+		console.error(message);
+		ctx.ui.notify(message, "error");
+	};
+
+	const processAgentsFile = async (ctx: ExtensionContext): Promise<{ source: string; slim: string } | undefined> => {
+		if (replacement) return replacement;
+		const agentsFile = findAgentsFile(ctx.cwd);
+		if (!agentsFile) return undefined;
+		const cached = loadCache(agentsFile, skillsDirectory);
+		if (cached) return cached;
+
+		const model = selectedModel(ctx.model);
+		if (!model) return undefined;
+		if (!ctx.modelRegistry.getProviderAuthStatus(ctx.model!.provider).configured) {
+			if (!authNoticeShown) {
+				ctx.ui.notify(
+					"Docker Sandbox AGENTS.md classification will run after /login openai-codex and model selection.",
+					"info",
+				);
+				authNoticeShown = true;
+			}
+			return undefined;
+		}
+
+		const source = sourceToClassify(agentsFile);
+		ctx.ui.notify("Classifying Docker Sandbox AGENTS.md with Pi… this can take a minute.", "info");
+		const progress = setTimeout(() => {
+			ctx.ui.notify("Still classifying Docker Sandbox AGENTS.md…", "info");
+		}, 30_000);
+		try {
+			replacement = applyClassification(agentsFile, skillsDirectory, source, await classify(source, ctx.cwd, model));
+			ctx.ui.notify("Docker Sandbox AGENTS.md classification complete; guidance moved to on-demand skills.", "info");
+			return replacement;
+		} catch (error) {
+			if (/No API key found for the selected model/.test((error as Error).message)) {
+				ctx.ui.notify(
+					"Docker Sandbox AGENTS.md classification will run after /login openai-codex and model selection.",
+					"info",
+				);
+				authNoticeShown = true;
+				return undefined;
+			}
+			throw error;
+		} finally {
+			clearTimeout(progress);
+		}
+	};
+
+	const ensureProcessed = (ctx: ExtensionContext): Promise<{ source: string; slim: string } | undefined> => {
+		pending ??= processAgentsFile(ctx).finally(() => {
+			pending = undefined;
+		});
+		return pending;
+	};
 
 	pi.on("session_start", async (event, ctx) => {
 		if (event.reason === "reload") return;
-		const agentsFile = findAgentsFile(ctx.cwd);
-		if (!agentsFile) return;
 		try {
-			if (loadCache(agentsFile, skillsDirectory)) return;
-			const source = sourceToClassify(agentsFile);
-			ctx.ui.notify("Classifying Docker Sandbox AGENTS.md with Pi…", "info");
-			const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
-			replacement = applyClassification(agentsFile, skillsDirectory, source, await classify(source, ctx.cwd, model));
-			ctx.ui.notify("Docker Sandbox guidance moved to on-demand skills", "info");
+			await ensureProcessed(ctx);
 		} catch (error) {
-			const message = `AGENTS.md classification failed: ${(error as Error).message}`;
-			console.error(message);
-			ctx.ui.notify(message, "error");
+			notifyError(ctx, error);
+		}
+	});
+
+	pi.on("model_select", async (_event, ctx) => {
+		try {
+			await ensureProcessed(ctx);
+		} catch (error) {
+			notifyError(ctx, error);
 		}
 	});
 
 	pi.on("resources_discover", () => ({ skillPaths: [skillsDirectory] }));
-	pi.on("before_agent_start", (event) => {
-		if (replacement && event.systemPrompt.includes(replacement.source)) {
-			return { systemPrompt: event.systemPrompt.replace(replacement.source, replacement.slim) };
+	pi.on("before_agent_start", async (event, ctx) => {
+		try {
+			const processed = replacement ?? (await ensureProcessed(ctx));
+			if (processed && event.systemPrompt.includes(processed.source)) {
+				return { systemPrompt: event.systemPrompt.replace(processed.source, processed.slim) };
+			}
+		} catch (error) {
+			notifyError(ctx, error);
 		}
 	});
 }
