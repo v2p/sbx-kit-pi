@@ -5,13 +5,23 @@ PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
 COMMAND ?= sbx-pi
 ARGS ?=
+IMAGE ?= $(shell grep -E '^[[:space:]]*image:' spec.yaml | head -1 | sed -E 's/^[[:space:]]*image:[[:space:]]*//')
+PI_AGENT_VERSION := $(shell printf '%s\n' '$(IMAGE)' | sed -E 's/^.*:([^:]+)$$/\1/')
 
-.PHONY: help validate test audit check run attach resume continue install uninstall
+.PHONY: help docker-image ensure-docker-image validate test audit check run attach resume continue install uninstall
 
 help: ## Show available targets
 	@awk 'BEGIN { FS = ":.*## "; printf "Usage: make <target> [ARGS=\"...\"]\n\n" } /^[a-zA-Z_-]+:.*## / { printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
-validate: ## Validate the Docker Sandbox kit
+docker-image: ## Build the local sandbox image with Pi and bundled extensions
+	docker build --build-arg PI_AGENT_VERSION=$(PI_AGENT_VERSION) -t $(IMAGE) .
+
+ensure-docker-image: ## Build the local sandbox image only when missing
+	@if ! docker image inspect "$(IMAGE)" >/dev/null 2>&1; then \
+		$(MAKE) docker-image; \
+	fi
+
+validate: ensure-docker-image ## Validate the Docker Sandbox kit
 	sbx kit validate .
 
 test: ## Run static tests

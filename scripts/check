@@ -14,6 +14,10 @@ printf '%s\n' '==> Running static tests'
 npm test
 
 if command -v sbx >/dev/null 2>&1; then
+  if command -v docker >/dev/null 2>&1; then
+    printf '%s\n' '==> Ensuring local Docker Sandbox image exists'
+    make ensure-docker-image
+  fi
   printf '%s\n' '==> Running Docker Sandbox kit validation'
   sbx kit validate .
 else

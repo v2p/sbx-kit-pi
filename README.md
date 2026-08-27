@@ -7,14 +7,19 @@ OpenAI API key or API billing.
 ## Requirements
 
 - Docker Sandboxes with `sbx` and schema v2 OAuth credential-file support
+- Docker, to build the local `sbx-kit-pi:<version>` sandbox image
 - A ChatGPT subscription with Codex access
 
 ## Run
 
 ```console
+make docker-image
 sbx kit validate .
 ./scripts/run
 ```
+
+`scripts/run` also builds the image automatically when creating a sandbox if
+`sbx-kit-pi:<version>` is missing locally.
 
 On the first launch:
 
@@ -42,6 +47,7 @@ Pass Pi resume flags after `--attach`:
 Run `make help` to list the project shortcuts. Common targets are:
 
 ```console
+make docker-image
 make validate
 make test
 make audit
@@ -77,10 +83,12 @@ shell's `PATH`.
 
 ## Docker Sandbox instruction preprocessing
 
-`scripts/run` installs a temporary Pi extension that processes the Docker
-Sandbox-generated ancestor `AGENTS.md` during `session_start`. When its source
-hash changes, the extension starts an isolated Pi subprocess and asks the
-active model to classify every source line as:
+The custom sandbox image installs Pi and copies this kit's extension into
+`/opt/sbx-kit-pi/extensions/` at image build time. The sandbox entrypoint loads
+it with `--extension`. The extension processes the Docker Sandbox-generated
+ancestor `AGENTS.md` during `session_start`. When its source hash changes, the
+extension starts an isolated Pi subprocess and asks the active model to classify
+every source line as:
 
 - **Always:** required for correct sandbox reasoning or prevention of a
   high-impact/recurrent mistake.
@@ -108,10 +116,10 @@ missing skill files are regenerated from the cached classification. A changed
 source is classified again. If authentication, model execution, or validation
 fails, Pi reports the error and leaves the current file unchanged.
 
-When changing this kit's extension code, restart the Pi process (exit and run
-`./scripts/run --attach` again) to load the updated extension; recreating the
-sandbox or repeating OAuth login is not required unless Pi reports missing
-provider authentication.
+When changing this kit's extension code, rebuild the image and recreate the
+sandbox so the updated bundled extension is present in
+`/opt/sbx-kit-pi/extensions/`. Repeating OAuth login is not required unless Pi
+reports missing provider authentication.
 
 ## Session persistence
 
@@ -145,7 +153,13 @@ disabled, and the kit does not modify user settings.
 
 ## Development
 
-Node.js 20 or newer is required. Run:
+Node.js 20 or newer is required. Build the local image with:
+
+```console
+make docker-image
+```
+
+Then run:
 
 ```console
 ./scripts/check
@@ -155,7 +169,8 @@ This installs locked test dependencies, audits them, runs the tests, and invokes
 `sbx kit validate .` when `sbx` is available. Otherwise, validation must be run
 on the Docker Sandbox host.
 
-To upgrade Pi, change `PI_AGENT_VERSION` in `spec.yaml`, then test a fresh
+To upgrade Pi, change the `spec.yaml` image tag and Dockerfile
+`PI_AGENT_VERSION` build argument default, rebuild the image, then test a fresh
 sandbox and recreation of an existing one.
 
 ## Sign out
