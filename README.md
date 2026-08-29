@@ -12,7 +12,6 @@ OpenAI API key or API billing.
 ## Run
 
 ```console
-sbx kit validate .
 ./scripts/run
 ```
 
@@ -37,23 +36,6 @@ Pass Pi resume flags after `--attach`:
 ```console
 ./scripts/run --attach --resume
 ./scripts/run --attach --continue
-```
-
-## Make shortcuts
-
-Run `make help` to list the project shortcuts. Common targets are:
-
-```console
-make docker-image
-make publish
-make validate
-make test
-make audit
-make check
-make run ARGS="--model gpt-5.6-sol"
-make attach
-make resume
-make continue
 ```
 
 ## Install as a user command
@@ -151,11 +133,12 @@ disabled, and the kit does not modify user settings.
 
 ## Development
 
-Node.js 20 or newer and Docker are required for development. Build the image
-locally with:
+Node.js 20 or newer and Docker are required for development. The Makefile is
+limited to image release tasks and installation of the optional user command.
+Build and smoke-test the image locally with:
 
 ```console
-make docker-image
+make image
 ```
 
 The default publishing destination is derived from configurable Make variables:
@@ -169,7 +152,7 @@ The checked-in `spec.yaml` references the concrete public image
 `docker.io/vposvistelik/sbx-kit-pi:<kit-version>` so Docker Sandbox can pull it.
 Changing the publishing namespace also requires updating that reference.
 
-Then run:
+Run the full development check with:
 
 ```console
 ./scripts/check
@@ -178,7 +161,8 @@ Then run:
 This installs locked test dependencies, audits them, runs the tests, builds and
 smoke-tests the custom image when Docker is available, and invokes
 `sbx kit validate .` when `sbx` is available. Skipped checks must be run on a
-Docker Sandbox host.
+Docker Sandbox host. For a quick static-test iteration, run `npm test`; audit
+dependencies separately with `npm run audit`.
 
 The custom image tag follows this kit's semver from `package.json`, independently
 of Pi's version. To upgrade Pi, change the Dockerfile `PI_AGENT_VERSION` build

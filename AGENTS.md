@@ -9,13 +9,14 @@ This repository is `sbx-kit-pi`: a Docker Sandbox kit that launches the Pi codin
 - `scripts/run` is the host launcher. It derives a workspace-specific sandbox/session name and runs or attaches via `sbx run`; Docker Sandbox pulls the published custom image.
 - `extensions/agents-postprocessor.ts` and `extensions/agents-classifier-output.ts` implement preprocessing for Docker Sandbox-generated `AGENTS.md` files and generated skills.
 - `tests/spec.test.js` contains static tests for the kit contract.
-- `Makefile` exposes common shortcuts (`make test`, `make audit`, `make check`, `make run`, `make attach`, etc.).
+- `Makefile` is intentionally limited to building/publishing the image and installing/uninstalling the optional user command.
 
 ## Development workflow
 
 - Use Node.js 20+.
 - Run `npm test` for static tests.
-- Run `./scripts/check` (or `make check`) to install locked dependencies, audit, test, build and smoke-test the custom image when Docker is available, and run `sbx kit validate .` when `sbx` is available.
+- Run `./scripts/check` to install locked dependencies, audit, test, build and smoke-test the custom image when Docker is available, and run `sbx kit validate .` when `sbx` is available.
+- Use `make image` for a local image build plus smoke test and `make publish` for a release push.
 - Run `sbx kit validate .` on a Docker Sandbox host when changing `spec.yaml`.
 - Keep tests focused on observable kit contracts and safety invariants. Do not add tests that mirror arbitrary file contents or implementation details; they are brittle and mostly catch intentional refactors rather than user-visible regressions.
 
