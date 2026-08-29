@@ -7,19 +7,16 @@ OpenAI API key or API billing.
 ## Requirements
 
 - Docker Sandboxes with `sbx` and schema v2 OAuth credential-file support
-- Docker, to build the local `sbx-kit-pi:<version>` sandbox image
 - A ChatGPT subscription with Codex access
 
 ## Run
 
 ```console
-make docker-image
 sbx kit validate .
 ./scripts/run
 ```
 
-`scripts/run` also builds the image automatically when creating a sandbox if
-`sbx-kit-pi:<version>` is missing locally.
+Docker Sandbox pulls the public versioned image referenced by `spec.yaml`.
 
 On the first launch:
 
@@ -48,6 +45,7 @@ Run `make help` to list the project shortcuts. Common targets are:
 
 ```console
 make docker-image
+make publish
 make validate
 make test
 make audit
@@ -153,11 +151,23 @@ disabled, and the kit does not modify user settings.
 
 ## Development
 
-Node.js 20 or newer is required. Build the local image with:
+Node.js 20 or newer and Docker are required for development. Build the image
+locally with:
 
 ```console
 make docker-image
 ```
+
+The default publishing destination is derived from configurable Make variables:
+
+```console
+make publish
+make publish DOCKERHUB_USERNAME=another-user
+```
+
+The checked-in `spec.yaml` references the concrete public image
+`docker.io/vposvistelik/sbx-kit-pi:<kit-version>` so Docker Sandbox can pull it.
+Changing the publishing namespace also requires updating that reference.
 
 Then run:
 
@@ -165,13 +175,16 @@ Then run:
 ./scripts/check
 ```
 
-This installs locked test dependencies, audits them, runs the tests, and invokes
-`sbx kit validate .` when `sbx` is available. Otherwise, validation must be run
-on the Docker Sandbox host.
+This installs locked test dependencies, audits them, runs the tests, builds and
+smoke-tests the custom image when Docker is available, and invokes
+`sbx kit validate .` when `sbx` is available. Skipped checks must be run on a
+Docker Sandbox host.
 
-To upgrade Pi, change the `spec.yaml` image tag and Dockerfile
-`PI_AGENT_VERSION` build argument default, rebuild the image, then test a fresh
-sandbox and recreation of an existing one.
+The custom image tag follows this kit's semver from `package.json`, independently
+of Pi's version. To upgrade Pi, change the Dockerfile `PI_AGENT_VERSION` build
+argument default. For a release, bump the kit version in `package.json`,
+`package-lock.json`, and the `spec.yaml` image tag, rebuild the image, then test
+a fresh sandbox and recreation of an existing one.
 
 ## Sign out
 

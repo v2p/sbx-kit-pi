@@ -23,10 +23,6 @@ pi_args=(
   "$@"
 )
 
-if ! (( attach_existing )); then
-  make -C "$kit_dir" ensure-docker-image
-fi
-
 if (( attach_existing )); then
   exec sbx run --name "$sandbox_name" -- "${pi_args[@]}"
 fi

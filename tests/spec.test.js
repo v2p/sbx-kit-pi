@@ -7,6 +7,7 @@ const YAML = require("yaml");
 
 const root = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(root, "spec.yaml"), "utf8");
+const packageMetadata = require(path.join(root, "package.json"));
 const spec = YAML.parse(source);
 
 function credential() {
@@ -75,8 +76,8 @@ test("disables update checks and telemetry at runtime", () => {
   });
 });
 
-test("uses a versioned custom image with no runtime setup install step", () => {
-  assert.match(spec.sandbox.image, /^sbx-kit-pi:\d+\.\d+\.\d+$/);
+test("uses the kit semver for the custom image with no runtime setup install step", () => {
+  assert.equal(spec.sandbox.image, `docker.io/vposvistelik/sbx-kit-pi:${packageMetadata.version}`);
   assert.equal(spec.setup, undefined);
 });
 

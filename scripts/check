@@ -13,11 +13,14 @@ npm run audit
 printf '%s\n' '==> Running static tests'
 npm test
 
+if command -v docker >/dev/null 2>&1; then
+  printf '%s\n' '==> Building and smoke-testing the local Docker Sandbox image'
+  make docker-image smoke-docker-image
+else
+  printf '%s\n' '==> SKIP: Docker is unavailable; run "make docker-image smoke-docker-image" on a Docker host' >&2
+fi
+
 if command -v sbx >/dev/null 2>&1; then
-  if command -v docker >/dev/null 2>&1; then
-    printf '%s\n' '==> Ensuring local Docker Sandbox image exists'
-    make ensure-docker-image
-  fi
   printf '%s\n' '==> Running Docker Sandbox kit validation'
   sbx kit validate .
 else

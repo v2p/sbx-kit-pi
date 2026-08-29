@@ -5,23 +5,33 @@ PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
 COMMAND ?= sbx-pi
 ARGS ?=
-IMAGE ?= $(shell grep -E '^[[:space:]]*image:' spec.yaml | head -1 | sed -E 's/^[[:space:]]*image:[[:space:]]*//')
-PI_AGENT_VERSION := $(shell printf '%s\n' '$(IMAGE)' | sed -E 's/^.*:([^:]+)$$/\1/')
+REGISTRY ?= docker.io
+DOCKERHUB_USERNAME ?= vposvistelik
+IMAGE_NAME ?= sbx-kit-pi
+KIT_VERSION := $(shell node -p "require('./package.json').version")
+IMAGE ?= $(REGISTRY)/$(DOCKERHUB_USERNAME)/$(IMAGE_NAME):$(KIT_VERSION)
+PI_AGENT_VERSION := $(shell grep -E '^ARG PI_AGENT_VERSION=' Dockerfile | head -1 | cut -d= -f2)
 
-.PHONY: help docker-image ensure-docker-image validate test audit check run attach resume continue install uninstall
+.PHONY: help docker-image ensure-docker-image smoke-docker-image publish validate test audit check run attach resume continue install uninstall
 
 help: ## Show available targets
 	@awk 'BEGIN { FS = ":.*## "; printf "Usage: make <target> [ARGS=\"...\"]\n\n" } /^[a-zA-Z_-]+:.*## / { printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
-docker-image: ## Build the local sandbox image with Pi and bundled extensions
-	docker build --build-arg PI_AGENT_VERSION=$(PI_AGENT_VERSION) -t $(IMAGE) .
+docker-image: ## Build the sandbox image with Pi and bundled extensions
+	docker build --build-arg PI_AGENT_VERSION=$(PI_AGENT_VERSION) -t "$(IMAGE)" .
 
 ensure-docker-image: ## Build the local sandbox image only when missing
 	@if ! docker image inspect "$(IMAGE)" >/dev/null 2>&1; then \
 		$(MAKE) docker-image; \
 	fi
 
-validate: ensure-docker-image ## Validate the Docker Sandbox kit
+smoke-docker-image: ensure-docker-image ## Verify Pi and bundled extensions in the local image
+	docker run --rm --entrypoint sh "$(IMAGE)" -c 'test "$$(pi --version)" = "$(PI_AGENT_VERSION)" && test -r /opt/sbx-kit-pi/extensions/agents-postprocessor.ts && test -r /opt/sbx-kit-pi/extensions/agents-classifier-output.ts'
+
+publish: docker-image smoke-docker-image ## Build, verify, and push the versioned image
+	docker push "$(IMAGE)"
+
+validate: smoke-docker-image ## Validate the Docker Sandbox kit
 	sbx kit validate .
 
 test: ## Run static tests
