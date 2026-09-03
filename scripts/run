@@ -3,16 +3,45 @@ set -euo pipefail
 
 attach_existing=0
 update_existing=0
-case ${1:-} in
-  --attach)
-    attach_existing=1
-    shift
-    ;;
-  --update)
-    update_existing=1
-    shift
-    ;;
-esac
+additional_kits=()
+
+while (( $# )); do
+  case $1 in
+    --attach)
+      attach_existing=1
+      shift
+      ;;
+    --update)
+      update_existing=1
+      shift
+      ;;
+    --kit)
+      if (( $# < 2 )); then
+        printf 'Missing kit reference after --kit\n' >&2
+        exit 2
+      fi
+      additional_kits+=("$2")
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if (( attach_existing && update_existing )); then
+  printf '%s\n' '--attach and --update cannot be used together' >&2
+  exit 2
+fi
+
+if (( attach_existing && ${#additional_kits[@]} )); then
+  printf '%s\n' '--kit cannot be used with --attach; recreate the sandbox with --update to change kits' >&2
+  exit 2
+fi
 
 launcher=$(readlink -f "${BASH_SOURCE[0]}")
 kit_dir=$(cd "$(dirname "$launcher")/.." && pwd -P)
@@ -34,19 +63,34 @@ if (( attach_existing )); then
   exec sbx run --name "$sandbox_name" -- "${pi_args[@]}"
 fi
 
-if (( update_existing )); then
+existing_sandboxes=
+if (( update_existing || ${#additional_kits[@]} )); then
   existing_sandboxes=$(sbx ls -q)
+fi
+
+if (( ${#additional_kits[@]} && ! update_existing )) \
+  && grep -Fxq -- "$sandbox_name" <<< "$existing_sandboxes"; then
+  printf 'Sandbox %s already exists; use --update to change its kits\n' "$sandbox_name" >&2
+  exit 2
+fi
+
+if (( update_existing )); then
   if grep -Fxq -- "$sandbox_name" <<< "$existing_sandboxes"; then
-    printf 'Recreating sandbox %s with the current kit image\n' "$sandbox_name"
+    printf 'Recreating sandbox %s with the current kit image and selected mixins\n' "$sandbox_name"
     sbx rm -f "$sandbox_name"
   else
-    printf 'Sandbox %s does not exist; creating it with the current kit image\n' "$sandbox_name"
+    printf 'Sandbox %s does not exist; creating it with the current kit image and selected mixins\n' "$sandbox_name"
   fi
 fi
 
+kit_args=(--kit "$kit_dir")
+for kit in "${additional_kits[@]}"; do
+  kit_args+=(--kit "$kit")
+done
+
 exec sbx run \
   --name "$sandbox_name" \
-  --kit "$kit_dir" \
+  "${kit_args[@]}" \
   pi-openai-codex \
   "$workspace" \
   "$session_dir" \

@@ -1,0 +1,21 @@
+schemaVersion: "2"
+kind: mixin
+name: project-bootstrap
+displayName: Node.js Project Bootstrap
+description: Install locked Node.js dependencies and tell the agent how to verify the project.
+
+setup:
+  install:
+    - command: npm ci
+      user: "1000"
+      description: Install the project's locked Node.js dependencies
+
+permissions:
+  network:
+    allow:
+      - registry.npmjs.org
+
+agentInstructions:
+  content: |
+    Project dependencies are installed with `npm ci` when the sandbox is created.
+    Run `npm test` before committing changes.

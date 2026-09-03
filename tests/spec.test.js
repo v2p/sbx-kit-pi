@@ -96,7 +96,7 @@ test("host launcher has valid Bash syntax", () => {
   assert.equal(syntax.status, 0, syntax.stderr);
 });
 
-test("host launcher recreates the current workspace sandbox on update", () => {
+test("host launcher recreates the current workspace sandbox with selected mixins", () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-kit-pi-update-"));
   const workspace = path.join(temporary, "project");
   const home = path.join(temporary, "home");
@@ -122,7 +122,12 @@ test("host launcher recreates the current workspace sandbox on update", () => {
   );
 
   try {
-    const update = spawnSync(path.join(root, "scripts", "run"), ["--update", "--continue"], {
+    const update = spawnSync(path.join(root, "scripts", "run"), [
+      "--update",
+      "--kit", "docker.io/acme/java-kit:1.1",
+      "--kit", "./sandbox-kits/project-tools",
+      "--continue",
+    ], {
       cwd: workspace,
       env: {
         ...process.env,
@@ -143,10 +148,60 @@ test("host launcher recreates the current workspace sandbox on update", () => {
       ["ls", "-q"],
       ["rm", "-f", sandboxName],
       [
-        "run", "--name", sandboxName, "--kit", root, "pi-openai-codex",
-        workspace, sessionDir, "--", "--session-dir", sessionDir, "--continue",
+        "run", "--name", sandboxName,
+        "--kit", root,
+        "--kit", "docker.io/acme/java-kit:1.1",
+        "--kit", "./sandbox-kits/project-tools",
+        "pi-openai-codex", workspace, sessionDir,
+        "--", "--session-dir", sessionDir, "--continue",
       ],
     ]);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test("host launcher requires recreation before applying mixins to an existing sandbox", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-kit-pi-mixin-"));
+  const workspace = path.join(temporary, "project");
+  const home = path.join(temporary, "home");
+  const bin = path.join(temporary, "bin");
+  const log = path.join(temporary, "sbx.log");
+  fs.mkdirSync(workspace);
+  fs.mkdirSync(home);
+  fs.mkdirSync(bin);
+
+  const hash = spawnSync("git", ["hash-object", "--stdin"], {
+    input: workspace,
+    encoding: "utf8",
+  });
+  assert.equal(hash.status, 0, hash.stderr);
+  const sandboxName = `pi-openai-codex-project-${hash.stdout.trim().slice(0, 12)}`;
+
+  fs.writeFileSync(
+    path.join(bin, "sbx"),
+    `#!/usr/bin/env bash\nprintf '%s\\n' "$@" >> "$SBX_LOG"\nif [[ $1 == ls ]]; then printf '%s\\n' "$SBX_LIST"; fi\n`,
+    { mode: 0o755 },
+  );
+
+  try {
+    const result = spawnSync(path.join(root, "scripts", "run"), [
+      "--kit", "docker.io/acme/java-kit:1.1",
+    ], {
+      cwd: workspace,
+      env: {
+        ...process.env,
+        HOME: home,
+        PATH: `${bin}:${process.env.PATH}`,
+        SBX_LIST: sandboxName,
+        SBX_LOG: log,
+      },
+      encoding: "utf8",
+    });
+
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /use --update to change its kits/);
+    assert.equal(fs.readFileSync(log, "utf8"), "ls\n-q\n");
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }

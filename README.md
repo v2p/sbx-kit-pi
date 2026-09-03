@@ -51,6 +51,58 @@ restore the stored credential. Other sandbox-local changes are discarded. A
 container image and its base image cannot be replaced in place, so recreation is
 required to upgrade them.
 
+## Add capability kits
+
+Pi remains the sandbox runtime while optional [mixin
+kits](https://docs.docker.com/ai/sandboxes/customize/kits/) add focused
+capabilities such as a language toolchain, cloud CLI, package registry, or team
+instructions. Pass `--kit` more than once to compose them when creating a
+sandbox:
+
+```console
+./scripts/run \
+  --kit docker.io/acme/java-kit:1.0 \
+  --kit docker.io/acme/github-kit:2.3
+```
+
+The launcher accepts local directories, pinned Git references, and OCI
+artifacts supported by `sbx`:
+
+```console
+./scripts/run --kit ./sandbox-kits/project-tools
+./scripts/run --kit 'git+https://github.com/acme/sbx-kits.git#ref=v1.2.0&dir=node'
+./scripts/run --kit docker.io/acme/node-kit:1.2.0
+```
+
+A local schema-v2 example is available at
+[`examples/mixins/project-bootstrap/`](examples/mixins/project-bootstrap/).
+Copy it into a project and adjust its install command, network access, and agent
+instructions for that project.
+
+Kits are fixed when a sandbox is created. To add, remove, or change mixins on an
+existing workspace sandbox, recreate it with the complete desired set:
+
+```console
+./scripts/run --update --kit docker.io/acme/java-kit:1.1
+```
+
+Run `./scripts/run --update` without additional kits to return to the base Pi
+kit. Reattach to an already configured sandbox with `--attach`; do not repeat
+its kit arguments. Use `--` to end launcher options explicitly when needed:
+
+```console
+./scripts/run --kit ./sandbox-kits/project-tools -- --continue
+```
+
+Treat kits as executable dependencies: install commands can run as root. Review
+local and Git-hosted kits, pin Git tags or commits and OCI versions, and avoid
+mutable references such as `main` or `latest`. Docker Hub is allowed as a kit
+source by default; other Git or registry publishers must be explicitly added to
+Docker Sandbox's `kit.allowedSources` setting. Keep each mixin's network and
+credential permissions narrow. Prefer proxy-managed credentials for external
+services so secrets remain on the host; this kit's OpenAI OAuth passthrough is a
+provider-specific exception.
+
 ## Install as a user command
 
 For use from any project directory on Linux, install the launcher as a symlink
