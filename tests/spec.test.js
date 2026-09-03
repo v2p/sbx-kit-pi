@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const test = require("node:test");
@@ -93,6 +94,62 @@ test("host launcher has valid Bash syntax", () => {
     encoding: "utf8",
   });
   assert.equal(syntax.status, 0, syntax.stderr);
+});
+
+test("host launcher recreates the current workspace sandbox on update", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-kit-pi-update-"));
+  const workspace = path.join(temporary, "project");
+  const home = path.join(temporary, "home");
+  const bin = path.join(temporary, "bin");
+  const log = path.join(temporary, "sbx.log");
+  fs.mkdirSync(workspace);
+  fs.mkdirSync(home);
+  fs.mkdirSync(bin);
+
+  const hash = spawnSync("git", ["hash-object", "--stdin"], {
+    input: workspace,
+    encoding: "utf8",
+  });
+  assert.equal(hash.status, 0, hash.stderr);
+  const sandboxName = `pi-openai-codex-project-${hash.stdout.trim().slice(0, 12)}`;
+  const sessionDir = path.join(home, "pi-sessions-backup", `project-${hash.stdout.trim().slice(0, 12)}`);
+
+  const mockSbx = path.join(bin, "sbx");
+  fs.writeFileSync(
+    mockSbx,
+    `#!/usr/bin/env bash\nprintf '<call>\\n' >> "$SBX_LOG"\nprintf '%s\\n' "$@" >> "$SBX_LOG"\nprintf '</call>\\n' >> "$SBX_LOG"\nif [[ $1 == ls ]]; then printf '%s\\n' "$SBX_LIST"; fi\n`,
+    { mode: 0o755 },
+  );
+
+  try {
+    const update = spawnSync(path.join(root, "scripts", "run"), ["--update", "--continue"], {
+      cwd: workspace,
+      env: {
+        ...process.env,
+        HOME: home,
+        PATH: `${bin}:${process.env.PATH}`,
+        SBX_LIST: sandboxName,
+        SBX_LOG: log,
+      },
+      encoding: "utf8",
+    });
+    assert.equal(update.status, 0, update.stderr);
+
+    const calls = fs.readFileSync(log, "utf8")
+      .split("<call>\n")
+      .slice(1)
+      .map((call) => call.slice(0, call.indexOf("</call>\n")).trimEnd().split("\n"));
+    assert.deepEqual(calls, [
+      ["ls", "-q"],
+      ["rm", "-f", sandboxName],
+      [
+        "run", "--name", sandboxName, "--kit", root, "pi-openai-codex",
+        workspace, sessionDir, "--", "--session-dir", sessionDir, "--continue",
+      ],
+    ]);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
 });
 
 test("does not introduce API-key configuration", () => {

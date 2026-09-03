@@ -38,6 +38,19 @@ Pass Pi resume flags after `--attach`:
 ./scripts/run --attach --continue
 ```
 
+To replace the current workspace's existing sandbox with the image referenced by
+the current kit, run:
+
+```console
+./scripts/run --update
+```
+
+This removes and recreates the sandbox under the same deterministic name. The
+host-mounted Pi sessions remain available, and the OAuth credential binding can
+restore the stored credential. Other sandbox-local changes are discarded. A
+container image and its base image cannot be replaced in place, so recreation is
+required to upgrade them.
+
 ## Install as a user command
 
 For use from any project directory on Linux, install the launcher as a symlink
@@ -48,6 +61,7 @@ make install
 cd ~/Projects/another-project
 sbx-pi
 sbx-pi --attach --resume
+sbx-pi --update
 ```
 
 Override the destination or command name when needed:
