@@ -96,6 +96,67 @@ test("host launcher has valid Bash syntax", () => {
   assert.equal(syntax.status, 0, syntax.stderr);
 });
 
+test("host launcher rejects the obsolete attach flag", () => {
+  const result = spawnSync(path.join(root, "scripts", "run"), ["--attach"], {
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /existing sandboxes are attached automatically/);
+});
+
+test("host launcher automatically attaches to the current workspace sandbox", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-kit-pi-attach-"));
+  const workspace = path.join(temporary, "project");
+  const home = path.join(temporary, "home");
+  const bin = path.join(temporary, "bin");
+  const log = path.join(temporary, "sbx.log");
+  fs.mkdirSync(workspace);
+  fs.mkdirSync(home);
+  fs.mkdirSync(bin);
+
+  const hash = spawnSync("git", ["hash-object", "--stdin"], {
+    input: workspace,
+    encoding: "utf8",
+  });
+  assert.equal(hash.status, 0, hash.stderr);
+  const suffix = hash.stdout.trim().slice(0, 12);
+  const sandboxName = `pi-openai-codex-project-${suffix}`;
+  const sessionDir = path.join(home, "pi-sessions-backup", `project-${suffix}`);
+
+  fs.writeFileSync(
+    path.join(bin, "sbx"),
+    `#!/usr/bin/env bash\nprintf '<call>\\n' >> "$SBX_LOG"\nprintf '%s\\n' "$@" >> "$SBX_LOG"\nprintf '</call>\\n' >> "$SBX_LOG"\nif [[ $1 == ls ]]; then printf '%s\\n' "$SBX_LIST"; fi\n`,
+    { mode: 0o755 },
+  );
+
+  try {
+    const result = spawnSync(path.join(root, "scripts", "run"), ["--continue"], {
+      cwd: workspace,
+      env: {
+        ...process.env,
+        HOME: home,
+        PATH: `${bin}:${process.env.PATH}`,
+        SBX_LIST: sandboxName,
+        SBX_LOG: log,
+      },
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    const calls = fs.readFileSync(log, "utf8")
+      .split("<call>\n")
+      .slice(1)
+      .map((call) => call.slice(0, call.indexOf("</call>\n")).trimEnd().split("\n"));
+    assert.deepEqual(calls, [
+      ["ls", "-q"],
+      ["run", "--name", sandboxName, "--", "--session-dir", sessionDir, "--continue"],
+    ]);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
 test("host launcher recreates the current workspace sandbox with selected mixins", () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-kit-pi-update-"));
   const workspace = path.join(temporary, "project");

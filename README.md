@@ -15,7 +15,9 @@ OpenAI API key or API billing.
 ./scripts/run
 ```
 
-Docker Sandbox pulls the public versioned image referenced by `spec.yaml`.
+The launcher checks for the workspace's deterministic sandbox name. If it
+already exists, the launcher attaches to it; otherwise, Docker Sandbox creates
+it from the public versioned image referenced by `spec.yaml`.
 
 On the first launch:
 
@@ -25,17 +27,12 @@ On the first launch:
 
 Use `/model` to select another Codex model.
 
-To reattach to the same sandbox later, run:
+On later launches, run the same command to reattach automatically. Pi resume
+flags can be passed directly:
 
 ```console
-./scripts/run --attach
-```
-
-Pass Pi resume flags after `--attach`:
-
-```console
-./scripts/run --attach --resume
-./scripts/run --attach --continue
+./scripts/run --resume
+./scripts/run --continue
 ```
 
 To replace the current workspace's existing sandbox with the image referenced by
@@ -87,7 +84,7 @@ existing workspace sandbox, recreate it with the complete desired set:
 ```
 
 Run `./scripts/run --update` without additional kits to return to the base Pi
-kit. Reattach to an already configured sandbox with `--attach`; do not repeat
+kit. An already configured sandbox is reattached automatically; do not repeat
 its kit arguments. Use `--` to end launcher options explicitly when needed:
 
 ```console
@@ -112,7 +109,7 @@ under `~/.local/bin`:
 make install
 cd ~/Projects/another-project
 sbx-pi
-sbx-pi --attach --resume
+sbx-pi --resume
 sbx-pi --update
 ```
 

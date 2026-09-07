@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-attach_existing=0
 update_existing=0
 additional_kits=()
 
 while (( $# )); do
   case $1 in
     --attach)
-      attach_existing=1
-      shift
+      printf '%s\n' '--attach is no longer supported; existing sandboxes are attached automatically' >&2
+      exit 2
       ;;
     --update)
       update_existing=1
@@ -33,16 +32,6 @@ while (( $# )); do
   esac
 done
 
-if (( attach_existing && update_existing )); then
-  printf '%s\n' '--attach and --update cannot be used together' >&2
-  exit 2
-fi
-
-if (( attach_existing && ${#additional_kits[@]} )); then
-  printf '%s\n' '--kit cannot be used with --attach; recreate the sandbox with --update to change kits' >&2
-  exit 2
-fi
-
 launcher=$(readlink -f "${BASH_SOURCE[0]}")
 kit_dir=$(cd "$(dirname "$launcher")/.." && pwd -P)
 workspace=$(pwd -P)
@@ -59,23 +48,23 @@ pi_args=(
   "$@"
 )
 
-if (( attach_existing )); then
-  exec sbx run --name "$sandbox_name" -- "${pi_args[@]}"
+existing_sandboxes=$(sbx ls -q)
+sandbox_exists=0
+if grep -Fxq -- "$sandbox_name" <<< "$existing_sandboxes"; then
+  sandbox_exists=1
 fi
 
-existing_sandboxes=
-if (( update_existing || ${#additional_kits[@]} )); then
-  existing_sandboxes=$(sbx ls -q)
-fi
-
-if (( ${#additional_kits[@]} && ! update_existing )) \
-  && grep -Fxq -- "$sandbox_name" <<< "$existing_sandboxes"; then
+if (( sandbox_exists && ${#additional_kits[@]} && ! update_existing )); then
   printf 'Sandbox %s already exists; use --update to change its kits\n' "$sandbox_name" >&2
   exit 2
 fi
 
+if (( sandbox_exists && ! update_existing )); then
+  exec sbx run --name "$sandbox_name" -- "${pi_args[@]}"
+fi
+
 if (( update_existing )); then
-  if grep -Fxq -- "$sandbox_name" <<< "$existing_sandboxes"; then
+  if (( sandbox_exists )); then
     printf 'Recreating sandbox %s with the current kit image and selected mixins\n' "$sandbox_name"
     sbx rm -f "$sandbox_name"
   else
