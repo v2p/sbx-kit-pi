@@ -2,6 +2,7 @@
 set -euo pipefail
 
 update_existing=0
+import_codex_auth=0
 additional_kits=()
 
 while (( $# )); do
@@ -12,6 +13,10 @@ while (( $# )); do
       ;;
     --update)
       update_existing=1
+      shift
+      ;;
+    --import-codex-auth)
+      import_codex_auth=1
       shift
       ;;
     --kit)
@@ -59,8 +64,36 @@ if (( sandbox_exists && ${#additional_kits[@]} && ! update_existing )); then
   exit 2
 fi
 
+if (( sandbox_exists && import_codex_auth && ! update_existing )); then
+  printf 'Sandbox %s already exists; use --update to import Codex credentials into a recreated sandbox\n' "$sandbox_name" >&2
+  exit 2
+fi
+
 if (( sandbox_exists && ! update_existing )); then
   exec sbx run --name "$sandbox_name" -- "${pi_args[@]}"
+fi
+
+import_dir=
+import_file=
+if (( import_codex_auth )); then
+  codex_auth_file="${CODEX_HOME:-$HOME/.codex}/auth.json"
+  if [[ ! -f $codex_auth_file || ! -r $codex_auth_file ]]; then
+    printf 'Codex authentication file is not readable: %s\n' "$codex_auth_file" >&2
+    exit 2
+  fi
+
+  state_home=${XDG_STATE_HOME:-"$HOME/.local/state"}
+  import_dir="$state_home/sbx-kit-pi/import/$sandbox_name"
+  import_file="$import_dir/codex-auth.json"
+  cleanup_import() {
+    rm -f -- "$import_file"
+  }
+  trap cleanup_import EXIT
+
+  install -d -m 0700 "$import_dir"
+  install -m 0600 "$codex_auth_file" "$import_file"
+
+  pi_args+=(--sbx-pi-import-codex-auth "$import_file")
 fi
 
 if (( update_existing )); then
@@ -77,10 +110,26 @@ for kit in "${additional_kits[@]}"; do
   kit_args+=(--kit "$kit")
 done
 
+volume_args=("$session_dir")
+if [[ -n $import_dir ]]; then
+  volume_args+=("$import_dir")
+fi
+
+if (( import_codex_auth )); then
+  sbx run \
+    --name "$sandbox_name" \
+    "${kit_args[@]}" \
+    pi-openai-codex \
+    "$workspace" \
+    "${volume_args[@]}" \
+    -- "${pi_args[@]}"
+  exit
+fi
+
 exec sbx run \
   --name "$sandbox_name" \
   "${kit_args[@]}" \
   pi-openai-codex \
   "$workspace" \
-  "$session_dir" \
+  "${volume_args[@]}" \
   -- "${pi_args[@]}"

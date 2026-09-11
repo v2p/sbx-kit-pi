@@ -23,7 +23,7 @@ test("uses tier-agnostic OpenAI Codex naming and provider configuration", () => 
   assert.equal(spec.displayName, "Pi (OpenAI Codex)");
   assert.doesNotMatch(source, /ChatGPT (?:Plus|Pro)/i);
   assert.deepEqual(spec.sandbox.entrypoint, [
-    "pi",
+    "/opt/sbx-kit-pi/scripts/container-entrypoint",
     "--provider",
     "openai-codex",
     "--extension",
@@ -103,6 +103,120 @@ test("host launcher rejects the obsolete attach flag", () => {
 
   assert.equal(result.status, 2);
   assert.match(result.stderr, /existing sandboxes are attached automatically/);
+});
+
+test("imports a Codex CLI OAuth credential into Pi's auth format", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-kit-pi-convert-auth-"));
+  const sourcePath = path.join(temporary, "codex-auth.json");
+  const targetPath = path.join(temporary, "pi", "auth.json");
+  const expires = 1_800_000_000;
+  const payload = Buffer.from(JSON.stringify({
+    exp: expires,
+    "https://api.openai.com/auth": { chatgpt_account_id: "account-from-claim" },
+  })).toString("base64url");
+  const access = `header.${payload}.signature`;
+
+  fs.writeFileSync(sourcePath, JSON.stringify({
+    tokens: {
+      access_token: access,
+      refresh_token: "refresh-token",
+      account_id: "account-from-file",
+    },
+  }), { mode: 0o600 });
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  fs.writeFileSync(targetPath, JSON.stringify({
+    anthropic: { type: "api_key", key: "existing-key" },
+  }));
+
+  try {
+    const result = spawnSync(
+      process.execPath,
+      [path.join(root, "scripts", "import-codex-auth.mjs"), sourcePath, targetPath],
+      { encoding: "utf8" },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(fs.readFileSync(targetPath, "utf8")), {
+      anthropic: { type: "api_key", key: "existing-key" },
+      "openai-codex": {
+        type: "oauth",
+        access,
+        refresh: "refresh-token",
+        expires: expires * 1000,
+        accountId: "account-from-file",
+      },
+    });
+    assert.equal(fs.statSync(targetPath).mode & 0o777, 0o600);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test("host launcher stages Codex credentials only while creating a sandbox", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-kit-pi-import-auth-"));
+  const workspace = path.join(temporary, "project");
+  const home = path.join(temporary, "home");
+  const stateHome = path.join(temporary, "state");
+  const bin = path.join(temporary, "bin");
+  const log = path.join(temporary, "sbx.log");
+  const codexDir = path.join(home, ".codex");
+  const codexAuth = path.join(codexDir, "auth.json");
+  fs.mkdirSync(workspace);
+  fs.mkdirSync(home);
+  fs.mkdirSync(bin);
+  fs.mkdirSync(codexDir);
+  fs.writeFileSync(codexAuth, '{"tokens":{"access_token":"a","refresh_token":"r"}}\n', { mode: 0o600 });
+
+  const hash = spawnSync("git", ["hash-object", "--stdin"], {
+    input: workspace,
+    encoding: "utf8",
+  });
+  assert.equal(hash.status, 0, hash.stderr);
+  const suffix = hash.stdout.trim().slice(0, 12);
+  const sandboxName = `pi-openai-codex-project-${suffix}`;
+  const sessionDir = path.join(home, "pi-sessions-backup", `project-${suffix}`);
+  const importDir = path.join(stateHome, "sbx-kit-pi", "import", sandboxName);
+  const importFile = path.join(importDir, "codex-auth.json");
+
+  fs.writeFileSync(
+    path.join(bin, "sbx"),
+    `#!/usr/bin/env bash\nprintf '<call>\\n' >> "$SBX_LOG"\nprintf '%s\\n' "$@" >> "$SBX_LOG"\nprintf '</call>\\n' >> "$SBX_LOG"\nif [[ $1 == ls ]]; then exit 0; fi\nfound=0\nfor arg in "$@"; do\n  if [[ $arg == */codex-auth.json ]]; then\n    cmp "$arg" "$CODEX_AUTH" || exit 91\n    found=1\n  fi\ndone\n(( found )) || exit 92\n`,
+    { mode: 0o755 },
+  );
+
+  try {
+    const result = spawnSync(path.join(root, "scripts", "run"), ["--import-codex-auth"], {
+      cwd: workspace,
+      env: {
+        ...process.env,
+        HOME: home,
+        XDG_STATE_HOME: stateHome,
+        PATH: `${bin}:${process.env.PATH}`,
+        CODEX_AUTH: codexAuth,
+        SBX_LOG: log,
+      },
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    const calls = fs.readFileSync(log, "utf8")
+      .split("<call>\n")
+      .slice(1)
+      .map((call) => call.slice(0, call.indexOf("</call>\n")).trimEnd().split("\n"));
+    assert.deepEqual(calls, [
+      ["ls", "-q"],
+      [
+        "run", "--name", sandboxName,
+        "--kit", root,
+        "pi-openai-codex", workspace, sessionDir, importDir,
+        "--", "--session-dir", sessionDir,
+        "--sbx-pi-import-codex-auth", importFile,
+      ],
+    ]);
+    assert.equal(fs.existsSync(importFile), false);
+    assert.equal(fs.readFileSync(codexAuth, "utf8"), '{"tokens":{"access_token":"a","refresh_token":"r"}}\n');
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
 });
 
 test("host launcher automatically attaches to the current workspace sandbox", () => {

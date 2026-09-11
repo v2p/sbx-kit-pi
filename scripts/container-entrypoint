@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+import_path=
+pi_args=()
+
+while (( $# )); do
+  case $1 in
+    --sbx-pi-import-codex-auth)
+      if (( $# < 2 )); then
+        printf 'Missing path after --sbx-pi-import-codex-auth\n' >&2
+        exit 2
+      fi
+      if [[ -n $import_path ]]; then
+        printf '%s\n' '--sbx-pi-import-codex-auth may only be specified once' >&2
+        exit 2
+      fi
+      import_path=$2
+      shift 2
+      ;;
+    *)
+      pi_args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ -n $import_path ]]; then
+  cleanup_import() {
+    rm -f -- "$import_path"
+  }
+  trap cleanup_import EXIT
+
+  if [[ ! -f $import_path ]]; then
+    printf 'Codex credential import file is unavailable: %s\n' "$import_path" >&2
+    exit 1
+  fi
+
+  node /opt/sbx-kit-pi/scripts/import-codex-auth.mjs \
+    "$import_path" \
+    "$HOME/.pi/agent/auth.json"
+
+  cleanup_import
+  trap - EXIT
+fi
+
+exec pi "${pi_args[@]}"

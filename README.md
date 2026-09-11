@@ -19,7 +19,27 @@ The launcher checks for the workspace's deterministic sandbox name. If it
 already exists, the launcher attaches to it; otherwise, Docker Sandbox creates
 it from the public versioned image referenced by `spec.yaml`.
 
-On the first launch:
+On the first launch, Pi can import the current Codex CLI login from
+`${CODEX_HOME:-$HOME/.codex}/auth.json`:
+
+```console
+./scripts/run --import-codex-auth
+```
+
+The launcher copies the Codex file to a private staging directory rather than
+mounting the original. The container extracts only the access token, refresh
+token, expiration, and account ID into Pi's `~/.pi/agent/auth.json`, then both
+the container entrypoint and host launcher remove the staged copy. Pi refreshes
+its own credential afterward; it does not update the Codex CLI file.
+
+The import option only applies while creating a sandbox. To import into an
+existing workspace sandbox, recreate it:
+
+```console
+./scripts/run --update --import-codex-auth
+```
+
+Alternatively, use Pi's independent login flow:
 
 1. Approve the `openai-codex` credential binding when prompted.
 2. Run `/login openai-codex` in Pi.
@@ -177,8 +197,11 @@ also included in the sandbox name, for example
 `pi-openai-codex-<project>-<workspace-path-hash>`, so each absolute workspace
 gets a distinct sandbox. The launcher mounts only the session directory and
 passes it to Pi with `--session-dir`.
-Other Pi state remains under `~/.pi/agent/` in the sandbox; refreshed OAuth
-credentials can be restored when it is recreated.
+Other Pi state remains under `~/.pi/agent/` in the sandbox. Credentials
+created through the Docker Sandbox OAuth binding can be restored when it is
+recreated. A credential imported from Codex CLI is sandbox-local after the
+one-time import; use `--update --import-codex-auth` to seed it again when
+recreating that sandbox.
 
 Additional workspaces are fixed when a sandbox is created, so remove an existing
 sandbox before switching it to this launcher. Session files can contain prompts,
@@ -190,6 +213,12 @@ Pi needs the real OAuth access-token JWT to determine the ChatGPT account ID, so
 the kit enables OAuth passthrough. Access and refresh tokens are therefore
 available inside the sandbox at `~/.pi/agent/auth.json` with mode `0600`. Keep
 the sandbox private and do not copy or share this file.
+
+Codex import is explicit because it gives the sandbox a copy of the host Codex
+OAuth credential. Do not run Codex CLI and Pi concurrently from the same
+imported refresh token: token rotation by either client can make the other
+client's stored credential stale. An independent `/login openai-codex` remains
+the safer option for concurrent use.
 
 Network access is restricted in `spec.yaml`. Pi's update check and telemetry are
 disabled, and the kit does not modify user settings.
