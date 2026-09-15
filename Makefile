@@ -18,7 +18,7 @@ help: ## Show available targets
 
 image: ## Build and smoke-test the sandbox image
 	docker build --build-arg PI_AGENT_VERSION=$(PI_AGENT_VERSION) -t "$(IMAGE)" .
-	docker run --rm --entrypoint sh "$(IMAGE)" -c 'test "$$(pi --version)" = "$(PI_AGENT_VERSION)" && test -r /opt/sbx-kit-pi/extensions/agents-postprocessor.ts && test -r /opt/sbx-kit-pi/extensions/agents-classifier-output.ts && test -x /opt/sbx-kit-pi/scripts/container-entrypoint && test -x /opt/sbx-kit-pi/scripts/import-codex-auth.mjs'
+	docker run --rm --entrypoint sh "$(IMAGE)" -c 'test "$$(pi --version)" = "$(PI_AGENT_VERSION)" && test -r /opt/sbx-kit-pi/extensions/agents-postprocessor.ts && test -r /opt/sbx-kit-pi/extensions/agents-classifier-output.ts && test -r /opt/sbx-kit-pi/extensions/linux-notifications.ts && test -x /opt/sbx-kit-pi/scripts/container-entrypoint && test -x /opt/sbx-kit-pi/scripts/import-codex-auth.mjs'
 
 publish: image ## Build, verify, and push the versioned image
 	docker push "$(IMAGE)"

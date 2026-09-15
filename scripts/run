@@ -4,6 +4,51 @@ set -euo pipefail
 update_existing=0
 import_codex_auth=0
 additional_kits=()
+import_file=
+notification_file=
+notification_listener_pid=
+
+notification_listener() {
+  set +e
+  local queue_file=$1
+
+  exec 3< "$queue_file" || return
+
+  process_notifications() {
+    local title body
+    while IFS=$'\t' read -r title body <&3; do
+      notify-send --app-name=Pi -- \
+        "${title:-Pi finished}" "${body:-Ready for input}" >/dev/null 2>&1 || true
+    done
+  }
+
+  running=1
+  trap 'running=0' INT TERM HUP
+
+  while (( running )); do
+    process_notifications
+    sleep 0.2 &
+    wait $! 2>/dev/null || true
+  done
+
+  # Drain events written just before the attached Pi process exited.
+  process_notifications
+  exec 3<&-
+}
+
+cleanup_host_state() {
+  if [[ -n $import_file ]]; then
+    rm -f -- "$import_file"
+  fi
+  if [[ -n $notification_listener_pid ]]; then
+    kill "$notification_listener_pid" 2>/dev/null || true
+    wait "$notification_listener_pid" 2>/dev/null || true
+  fi
+  if [[ -n $notification_file ]]; then
+    rm -f -- "$notification_file"
+  fi
+}
+trap cleanup_host_state EXIT
 
 while (( $# )); do
   case $1 in
@@ -53,6 +98,36 @@ pi_args=(
   "$@"
 )
 
+notifications=${SBX_PI_NOTIFICATIONS:-auto}
+case ${notifications,,} in
+  auto)
+    notifications=auto
+    ;;
+  1|true|on)
+    notifications=on
+    ;;
+  0|false|off)
+    notifications=off
+    ;;
+  *)
+    printf 'Invalid SBX_PI_NOTIFICATIONS value: %s (expected auto, on, or off)\n' "$notifications" >&2
+    exit 2
+    ;;
+esac
+
+if [[ $notifications != off ]]; then
+  if command -v notify-send >/dev/null 2>&1; then
+    notification_file="$session_dir/.notifications.queue"
+    rm -f -- "$notification_file"
+    (umask 077; : > "$notification_file")
+    notification_listener "$notification_file" &
+    notification_listener_pid=$!
+  elif [[ $notifications == on ]]; then
+    printf '%s\n' 'SBX_PI_NOTIFICATIONS is enabled, but notify-send is not installed on the host' >&2
+    exit 2
+  fi
+fi
+
 existing_sandboxes=$(sbx ls -q)
 sandbox_exists=0
 if grep -Fxq -- "$sandbox_name" <<< "$existing_sandboxes"; then
@@ -70,11 +145,11 @@ if (( sandbox_exists && import_codex_auth && ! update_existing )); then
 fi
 
 if (( sandbox_exists && ! update_existing )); then
-  exec sbx run --name "$sandbox_name" -- "${pi_args[@]}"
+  sbx run --name "$sandbox_name" -- "${pi_args[@]}"
+  exit
 fi
 
 import_dir=
-import_file=
 if (( import_codex_auth )); then
   codex_auth_file="${CODEX_HOME:-$HOME/.codex}/auth.json"
   if [[ ! -f $codex_auth_file || ! -r $codex_auth_file ]]; then
@@ -85,11 +160,6 @@ if (( import_codex_auth )); then
   state_home=${XDG_STATE_HOME:-"$HOME/.local/state"}
   import_dir="$state_home/sbx-kit-pi/import/$sandbox_name"
   import_file="$import_dir/codex-auth.json"
-  cleanup_import() {
-    rm -f -- "$import_file"
-  }
-  trap cleanup_import EXIT
-
   install -d -m 0700 "$import_dir"
   install -m 0600 "$codex_auth_file" "$import_file"
 
@@ -126,7 +196,7 @@ if (( import_codex_auth )); then
   exit
 fi
 
-exec sbx run \
+sbx run \
   --name "$sandbox_name" \
   "${kit_args[@]}" \
   pi-openai-codex \

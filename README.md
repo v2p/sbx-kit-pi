@@ -8,6 +8,8 @@ OpenAI API key or API billing.
 
 - Docker Sandboxes with `sbx` and schema v2 OAuth credential-file support
 - A ChatGPT subscription with Codex access
+- Optional on Linux: `notify-send` (usually provided by `libnotify-bin` or
+  `libnotify`) for desktop completion notifications
 
 ## Run
 
@@ -46,6 +48,34 @@ Alternatively, use Pi's independent login flow:
 3. Select **Device code login (headless)** and sign in.
 
 Use `/model` to select another Codex model.
+
+## Linux desktop notifications
+
+When `notify-send` is available on the Linux host, the launcher enables desktop
+notifications automatically. Pi sends one after an agent job has fully settled
+(including automatic retries, compaction retries, and queued follow-ups). The
+title contains the project name and the body contains the deterministic sandbox
+name; a Pi session name is included when one has been set with `/name`.
+
+The integration has two small components without opening a network port. The
+bundled `linux-notifications.ts` Pi extension appends completion events to a
+private queue file in the already mounted project session directory. A
+lightweight listener inside `scripts/run` consumes that queue while Pi is
+attached and calls `notify-send` in the host desktop session. The queue exists
+only while the host listener is active, so unattended sandbox processes do not
+accumulate notifications. The extension derives the project, sandbox, and
+session directory from Docker Sandbox and Pi runtime
+context, so no private Pi arguments are needed. Notification failures never
+interrupt an agent job. Set
+`SBX_PI_NOTIFICATIONS=off` to disable the integration, or set it to `on` to
+require it and fail early when `notify-send` is unavailable. The default is
+`auto`.
+
+Existing sandboxes must be recreated once to pick up the bundled extension:
+
+```console
+./scripts/run --update
+```
 
 On later launches, run the same command to reattach automatically. Pi resume
 flags can be passed directly:

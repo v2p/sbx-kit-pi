@@ -28,6 +28,8 @@ test("uses tier-agnostic OpenAI Codex naming and provider configuration", () => 
     "openai-codex",
     "--extension",
     "/opt/sbx-kit-pi/extensions/agents-postprocessor.ts",
+    "--extension",
+    "/opt/sbx-kit-pi/extensions/linux-notifications.ts",
   ]);
 });
 
@@ -89,11 +91,13 @@ test("does not create or overwrite user settings", () => {
   assert.doesNotMatch(source, /enableInstallTelemetry/);
 });
 
-test("host launcher has valid Bash syntax", () => {
-  const syntax = spawnSync("bash", ["-n", path.join(root, "scripts", "run")], {
-    encoding: "utf8",
-  });
-  assert.equal(syntax.status, 0, syntax.stderr);
+test("shell scripts have valid Bash syntax", () => {
+  for (const script of ["run", "container-entrypoint"]) {
+    const syntax = spawnSync("bash", ["-n", path.join(root, "scripts", script)], {
+      encoding: "utf8",
+    });
+    assert.equal(syntax.status, 0, `${script}: ${syntax.stderr}`);
+  }
 });
 
 test("host launcher rejects the obsolete attach flag", () => {
@@ -193,6 +197,7 @@ test("host launcher stages Codex credentials only while creating a sandbox", () 
         PATH: `${bin}:${process.env.PATH}`,
         CODEX_AUTH: codexAuth,
         SBX_LOG: log,
+        SBX_PI_NOTIFICATIONS: "off",
       },
       encoding: "utf8",
     });
@@ -253,6 +258,7 @@ test("host launcher automatically attaches to the current workspace sandbox", ()
         PATH: `${bin}:${process.env.PATH}`,
         SBX_LIST: sandboxName,
         SBX_LOG: log,
+        SBX_PI_NOTIFICATIONS: "off",
       },
       encoding: "utf8",
     });
@@ -266,6 +272,77 @@ test("host launcher automatically attaches to the current workspace sandbox", ()
       ["ls", "-q"],
       ["run", "--name", sandboxName, "--", "--session-dir", sessionDir, "--continue"],
     ]);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test("host launcher enables notifications without adding private Pi arguments", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-kit-pi-notification-launcher-"));
+  const workspace = path.join(temporary, "project");
+  const home = path.join(temporary, "home");
+  const bin = path.join(temporary, "bin");
+  const log = path.join(temporary, "sbx.log");
+  const notifyLog = path.join(temporary, "notify.log");
+  fs.mkdirSync(workspace);
+  fs.mkdirSync(home);
+  fs.mkdirSync(bin);
+
+  const hash = spawnSync("git", ["hash-object", "--stdin"], {
+    input: workspace,
+    encoding: "utf8",
+  });
+  assert.equal(hash.status, 0, hash.stderr);
+  const suffix = hash.stdout.trim().slice(0, 12);
+  const sandboxName = `pi-openai-codex-project-${suffix}`;
+  const sessionDir = path.join(home, "pi-sessions-backup", `project-${suffix}`);
+  const notificationFile = path.join(sessionDir, ".notifications.queue");
+
+  fs.writeFileSync(
+    path.join(bin, "notify-send"),
+    "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" > \"$NOTIFY_LOG\"\n",
+    { mode: 0o755 },
+  );
+  fs.writeFileSync(
+    path.join(bin, "sbx"),
+    `#!/usr/bin/env bash\nprintf '<call>\\n' >> "$SBX_LOG"\nprintf '%s\\n' "$@" >> "$SBX_LOG"\nprintf '</call>\\n' >> "$SBX_LOG"\nif [[ $1 == ls ]]; then\n  printf '%s\\n' "$SBX_LIST"\nelif [[ $1 == run ]]; then\n  [[ -f $NOTIFICATION_FILE ]] || exit 3\n  printf '%s\\t%s\\n' 'Pi finished · project' "$SBX_LIST" >> "$NOTIFICATION_FILE"\nfi\n`,
+    { mode: 0o755 },
+  );
+
+  try {
+    const result = spawnSync(path.join(root, "scripts", "run"), [], {
+      cwd: workspace,
+      env: {
+        ...process.env,
+        HOME: home,
+        PATH: `${bin}:${process.env.PATH}`,
+        SBX_LIST: sandboxName,
+        SBX_LOG: log,
+        SBX_PI_NOTIFICATIONS: "on",
+        NOTIFICATION_FILE: notificationFile,
+        NOTIFY_LOG: notifyLog,
+      },
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    const calls = fs.readFileSync(log, "utf8")
+      .split("<call>\n")
+      .slice(1)
+      .map((call) => call.slice(0, call.indexOf("</call>\n")).trimEnd().split("\n"));
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls[0], ["ls", "-q"]);
+
+    assert.deepEqual(calls[1], [
+      "run", "--name", sandboxName, "--", "--session-dir", sessionDir,
+    ]);
+    assert.deepEqual(fs.readFileSync(notifyLog, "utf8").trimEnd().split("\n"), [
+      "--app-name=Pi",
+      "--",
+      "Pi finished · project",
+      sandboxName,
+    ]);
+    assert.equal(fs.existsSync(notificationFile), false);
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }
@@ -310,6 +387,7 @@ test("host launcher recreates the current workspace sandbox with selected mixins
         PATH: `${bin}:${process.env.PATH}`,
         SBX_LIST: sandboxName,
         SBX_LOG: log,
+        SBX_PI_NOTIFICATIONS: "off",
       },
       encoding: "utf8",
     });
@@ -370,6 +448,7 @@ test("host launcher requires recreation before applying mixins to an existing sa
         PATH: `${bin}:${process.env.PATH}`,
         SBX_LIST: sandboxName,
         SBX_LOG: log,
+        SBX_PI_NOTIFICATIONS: "off",
       },
       encoding: "utf8",
     });
