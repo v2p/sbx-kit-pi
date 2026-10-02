@@ -49,6 +49,20 @@ Alternatively, use Pi's independent login flow:
 
 Use `/model` to select another Codex model.
 
+## Token usage
+
+After every LLM turn, Pi prints a compact usage line in the interactive
+transcript:
+
+```text
+tokens · prompt 38,247 (new 2,100, cached 36,147) · output 1,402 (reasoning 920) · total 39,649
+```
+
+The prompt breakdown distinguishes newly processed tokens from cache reads and,
+when reported by the provider, cache writes. Reasoning is a subset of output.
+These per-turn lines complement Pi's cumulative token and context-window totals
+in the footer and do not become part of the model context or persisted session.
+
 ## Linux desktop notifications
 
 When `notify-send` is available on the Linux host, the launcher enables desktop

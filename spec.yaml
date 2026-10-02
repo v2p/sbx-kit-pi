@@ -14,6 +14,8 @@ sandbox:
     - /opt/sbx-kit-pi/extensions/agents-postprocessor.ts
     - --extension
     - /opt/sbx-kit-pi/extensions/linux-notifications.ts
+    - --extension
+    - /opt/sbx-kit-pi/extensions/token-usage.ts
 
 agentInstructions:
   filename: AGENTS.md

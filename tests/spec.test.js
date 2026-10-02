@@ -7,6 +7,9 @@ const test = require("node:test");
 const YAML = require("yaml");
 
 const root = path.resolve(__dirname, "..");
+const { createJiti } = require(require.resolve("jiti", {
+  paths: [path.join(root, "node_modules", "@earendil-works", "pi-coding-agent")],
+}));
 const source = fs.readFileSync(path.join(root, "spec.yaml"), "utf8");
 const packageMetadata = require(path.join(root, "package.json"));
 const spec = YAML.parse(source);
@@ -30,7 +33,49 @@ test("uses tier-agnostic OpenAI Codex naming and provider configuration", () => 
     "/opt/sbx-kit-pi/extensions/agents-postprocessor.ts",
     "--extension",
     "/opt/sbx-kit-pi/extensions/linux-notifications.ts",
+    "--extension",
+    "/opt/sbx-kit-pi/extensions/token-usage.ts",
   ]);
+});
+
+test("reports detailed usage after each interactive LLM turn", () => {
+  const load = createJiti(__filename);
+  const extension = load(path.join(root, "extensions", "token-usage.ts")).default;
+  let turnEnd;
+  extension({
+    on(event, handler) {
+      if (event === "turn_end") turnEnd = handler;
+    },
+  });
+  assert.equal(typeof turnEnd, "function");
+
+  const notifications = [];
+  const event = {
+    message: {
+      role: "assistant",
+      usage: {
+        input: 2100,
+        output: 1402,
+        cacheRead: 36147,
+        cacheWrite: 0,
+        reasoning: 920,
+        totalTokens: 39649,
+      },
+    },
+  };
+  turnEnd(event, {
+    mode: "tui",
+    ui: { notify: (message, type) => notifications.push({ message, type }) },
+  });
+  turnEnd(event, {
+    mode: "json",
+    ui: { notify: (message, type) => notifications.push({ message, type }) },
+  });
+
+  assert.deepEqual(notifications, [{
+    message: "tokens · prompt 38,247 (new 2,100, cached 36,147) · output 1,402 (reasoning 920) · total 39,649",
+    type: "info",
+  }]);
 });
 
 test("adds only concise, environment-specific agent instructions", () => {
