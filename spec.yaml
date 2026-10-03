@@ -10,6 +10,8 @@ sandbox:
     - /opt/sbx-kit-pi/scripts/container-entrypoint
     - --provider
     - openai-codex
+    - --model
+    - gpt-6.1-sol
     - --extension
     - /opt/sbx-kit-pi/extensions/agents-postprocessor.ts
     - --extension

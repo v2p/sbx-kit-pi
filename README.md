@@ -47,7 +47,7 @@ Alternatively, use Pi's independent login flow:
 2. Run `/login openai-codex` in Pi.
 3. Select **Device code login (headless)** and sign in.
 
-Use `/model` to select another Codex model.
+The kit starts with `gpt-6.1-sol`. Use `/model` to select another Codex model.
 
 ## Token usage
 
@@ -269,7 +269,7 @@ disabled, and the kit does not modify user settings.
 
 ## Development
 
-Node.js 20 or newer and Docker are required for development. The Makefile is
+Node.js 22.19 or newer and Docker are required for development. The Makefile is
 limited to image release tasks and installation of the optional user command.
 Build and smoke-test the image locally with:
 

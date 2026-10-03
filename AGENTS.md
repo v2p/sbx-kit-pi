@@ -13,7 +13,7 @@ This repository is `sbx-kit-pi`: a Docker Sandbox kit that launches the Pi codin
 
 ## Development workflow
 
-- Use Node.js 20+.
+- Use Node.js 22.19+.
 - Run `npm test` for static tests.
 - Run `./scripts/check` to install locked dependencies, audit, test, build and smoke-test the custom image when Docker is available, and run `sbx kit validate .` when `sbx` is available.
 - Use `make image` for a local image build plus smoke test and `make publish` for a release push.

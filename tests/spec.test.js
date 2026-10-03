@@ -11,6 +11,7 @@ const { createJiti } = require(require.resolve("jiti", {
   paths: [path.join(root, "node_modules", "@earendil-works", "pi-coding-agent")],
 }));
 const source = fs.readFileSync(path.join(root, "spec.yaml"), "utf8");
+const dockerfile = fs.readFileSync(path.join(root, "Dockerfile"), "utf8");
 const packageMetadata = require(path.join(root, "package.json"));
 const spec = YAML.parse(source);
 
@@ -29,6 +30,8 @@ test("uses tier-agnostic OpenAI Codex naming and provider configuration", () => 
     "/opt/sbx-kit-pi/scripts/container-entrypoint",
     "--provider",
     "openai-codex",
+    "--model",
+    "gpt-6.1-sol",
     "--extension",
     "/opt/sbx-kit-pi/extensions/agents-postprocessor.ts",
     "--extension",
@@ -36,6 +39,11 @@ test("uses tier-agnostic OpenAI Codex naming and provider configuration", () => 
     "--extension",
     "/opt/sbx-kit-pi/extensions/token-usage.ts",
   ]);
+});
+
+test("uses the same Pi version for tests and the sandbox image", () => {
+  const imageVersion = dockerfile.match(/^ARG PI_AGENT_VERSION=(.+)$/m)?.[1];
+  assert.equal(imageVersion, packageMetadata.devDependencies["@earendil-works/pi-coding-agent"]);
 });
 
 test("reports detailed usage after each interactive LLM turn", () => {

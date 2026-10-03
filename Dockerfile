@@ -1,6 +1,6 @@
 FROM docker/sandbox-templates:shell-docker-0.5.0
 
-ARG PI_AGENT_VERSION=0.85.1
+ARG PI_AGENT_VERSION=1.0.1
 
 RUN npm install -g --ignore-scripts --no-audit --no-fund "@earendil-works/pi-coding-agent@${PI_AGENT_VERSION}" \
     && test "$(pi --version)" = "$PI_AGENT_VERSION" \
