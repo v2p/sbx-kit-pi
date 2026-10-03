@@ -70,9 +70,9 @@ test("completion offers context-specific launcher commands and flags, not Pi arg
   assert.deepEqual(f.complete("completion", "z"), ["words", "zsh"]);
   assert.deepEqual(f.complete("completion", "zsh", ""), ["words"]);
   assert.deepEqual(f.complete("config", ""), ["words", "show", "alias"]);
-  assert.deepEqual(f.complete("--up"), ["words", "--update"]);
-  assert.deepEqual(f.complete("init", "--"), ["words", "--kit", "--no-kits"]);
-  assert.deepEqual(f.complete("status", "--up"), ["words"]);
+  assert.deepEqual(f.complete("--rec"), ["words", "--recreate"]);
+  assert.deepEqual(f.complete("init", "--"), ["words", "--kit", "--no-kits", "--help"]);
+  assert.deepEqual(f.complete("status", "--rec"), ["words"]);
   assert.deepEqual(f.complete("config", "show", "--con"), ["words", "--config"]);
   assert.deepEqual(f.complete("--config", "a file"), ["files"]);
   assert.deepEqual(f.complete("--kit", "./some dir"), ["files"]);
@@ -80,9 +80,10 @@ test("completion offers context-specific launcher commands and flags, not Pi arg
     "words",
     "--kit",
     "--no-kits",
+    "--help",
     "--config",
-    "--no-project-config",
-    "--update",
+    "--no-config",
+    "--recreate",
     "--import-codex-auth",
   ]);
   assert.deepEqual(f.complete("--", "--"), ["words"]);
@@ -115,7 +116,7 @@ test("completion reads global aliases and tolerates missing or malformed persona
 
 test("completion initialization rejects invalid shells without emitting code or writing files", (t) => {
   const f = fixture(t);
-  for (const args of [[], ["fish"], ["bash", "extra"], ["--update"]]) {
+  for (const args of [[], ["fish"], ["bash", "extra"], ["--recreate"]]) {
     const result = f.execute("my-pi", ["completion", ...args]);
     assert.equal(result.status, 2);
     assert.equal(result.stdout, "");

@@ -152,11 +152,9 @@ function resolve(args, initialize = false) {
         }
         projectFile = path.resolve(cwd, string(args[++i], "--config"));
         break;
-      case "--no-project-config":
+      case "--no-config":
         if (initialize) {
-          throw new Error(
-            "init does not discover project manifests; --no-project-config is not supported",
-          );
+          throw new Error("init does not discover project manifests; --no-config is not supported");
         }
         disabled = true;
         break;
@@ -171,7 +169,7 @@ function resolve(args, initialize = false) {
     }
   }
   if (disabled && projectFile) {
-    throw new Error("--config and --no-project-config cannot be combined");
+    throw new Error("--config and --no-config cannot be combined");
   }
   if (!disabled && !projectFile) {
     let dir = cwd;
@@ -202,7 +200,7 @@ function resolve(args, initialize = false) {
     }
     return ref.startsWith(".") || path.isAbsolute(ref) ? path.resolve(dir, ref) : ref;
   };
-  // CLI paths retain their historical invocation-relative meaning.
+  // CLI paths are relative to the invocation directory.
   const kits = (cliKits ?? project.kits ?? []).map((ref) => {
     if (cliKits !== undefined && !ref.startsWith("@")) {
       return workspace !== cwd && ref.startsWith(".") ? path.resolve(cwd, ref) : ref;
@@ -336,11 +334,11 @@ try {
       const previous = applied(config);
       if (!previous && config.projectFile) {
         console.error(
-          "Applied configuration is unknown for this sandbox. Attaching without changes; run sbx-pi --update to apply the project manifest.",
+          "Applied configuration is unknown for this sandbox. Attaching without changes; run sbx-pi --recreate to apply the project manifest.",
         );
       } else if (previous && previous.fingerprint !== config.fingerprint) {
         console.error(
-          "Project configuration differs from this sandbox. Attaching without changes; run sbx-pi --update to apply.",
+          "Project configuration differs from this sandbox. Attaching without changes; run sbx-pi --recreate to apply.",
         );
       }
     }

@@ -157,13 +157,25 @@ test("shell scripts have valid Bash syntax", () => {
   }
 });
 
-test("host launcher rejects the obsolete attach flag", () => {
-  const result = spawnSync(path.join(root, "scripts", "run"), ["--attach"], {
-    encoding: "utf8",
-  });
-
-  assert.equal(result.status, 2);
-  assert.match(result.stderr, /existing sandboxes are attached automatically/);
+test("launcher help works without dependencies, configuration, or Docker", () => {
+  for (const args of [
+    ["--help"],
+    ["-h"],
+    ["init", "--help"],
+    ["status", "--help"],
+    ["config", "show", "--help"],
+    ["config", "alias", "--help"],
+  ]) {
+    const result = spawnSync(path.join(root, "scripts", "run"), args, {
+      encoding: "utf8",
+      env: { ...process.env, XDG_CONFIG_HOME: "/nonexistent", PATH: "/usr/bin:/bin" },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Usage: sbx-pi/);
+    assert.match(result.stdout, /--recreate/);
+    assert.match(result.stdout, /discard sandbox-local changes/);
+    assert.equal(result.stderr, "");
+  }
 });
 
 test("imports a Codex CLI OAuth credential into Pi's auth format", () => {
@@ -462,7 +474,7 @@ test("host launcher recreates the current workspace sandbox with selected mixins
     const update = spawnSync(
       path.join(root, "scripts", "run"),
       [
-        "--update",
+        "--recreate",
         "--kit",
         "docker.io/acme/java-kit:1.1",
         "--kit",
@@ -558,7 +570,7 @@ test("host launcher requires recreation before applying mixins to an existing sa
     );
 
     assert.equal(result.status, 2);
-    assert.match(result.stderr, /use --update to change its kits/);
+    assert.match(result.stderr, /use --recreate to change its kits/);
     assert.equal(fs.readFileSync(log, "utf8"), "ls\n-q\n");
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });

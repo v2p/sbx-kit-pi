@@ -247,8 +247,8 @@ test("init rejects host-only paths and unsupported options before writing", (t) 
     ["--kit", path.join(f.dir, "host-tools")],
     ["--kit", "@missing"],
     ["--config", "../sbx-pi.toml"],
-    ["--no-project-config"],
-    ["--update"],
+    ["--no-config"],
+    ["--recreate"],
     ["--import-codex-auth"],
     ["--continue"],
     ["--kit"],
@@ -319,7 +319,7 @@ test("discovers project root, resolves TOML paths and applies notification prece
     path.join(f.subdir, "cli"),
   ]);
   assert.deepEqual(f.show(["--no-kits"]).kits, []);
-  const disabled = f.show(["--no-project-config"]);
+  const disabled = f.show(["--no-config"]);
   assert.equal(disabled.workspace, f.subdir);
   assert.equal(disabled.notifications, "off");
   assert.deepEqual(disabled.kits, []);
@@ -347,7 +347,7 @@ test("validates manifests and aliases before invoking Docker Sandbox", (t) => {
   fs.writeFileSync(f.global, 'schema_version = 1\n[kit_aliases]\na = "@b"');
   assert.match(f.run().stderr, /aliases cannot reference aliases/);
   fs.rmSync(f.global);
-  assert.equal(f.run(["--config", "../sbx-pi.toml", "--no-project-config"]).status, 2);
+  assert.equal(f.run(["--config", "../sbx-pi.toml", "--no-config"]).status, 2);
   assert.equal(f.run([], { SBX_PI_NOTIFICATIONS: "__proto__" }).status, 2);
   assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
 });
@@ -386,7 +386,7 @@ test("tracks applied kits, warns on drift, and recreates using the persisted man
   const attachCall = f.calls().at(-1);
   assert.equal(attachCall.includes("--kit"), false);
   assert.equal(f.status().appliedKits[0], "docker.io/acme/node:1");
-  const update = f.run(["--update"]);
+  const update = f.run(["--recreate"]);
   assert.equal(update.status, 0, update.stderr);
   assert.equal(f.status().status, "current");
   assert.deepEqual(f.status().appliedKits, [
@@ -394,7 +394,7 @@ test("tracks applied kits, warns on drift, and recreates using the persisted man
     path.join(f.workspace, "tools"),
   ]);
   assert.equal(f.calls().filter((call) => call[0] === "rm").length, 1);
-  const cleared = f.run(["--update", "--no-kits"]);
+  const cleared = f.run(["--recreate", "--no-kits"]);
   assert.equal(cleared.status, 0, cleared.stderr);
   assert.deepEqual(f.status().appliedKits, []);
   assert.equal(f.status().status, "drifted", "CLI overrides do not rewrite the manifest");
@@ -408,9 +408,9 @@ test("unknown legacy state and failed recreation never claim a current configura
   const attach = f.run();
   assert.equal(attach.status, 0, attach.stderr);
   assert.match(attach.stderr, /Applied configuration is unknown/);
-  assert.equal(f.run(["--update"]).status, 0);
+  assert.equal(f.run(["--recreate"]).status, 0);
   assert.equal(f.status().status, "current");
-  assert.equal(f.run(["--update"], { MOCK_FAIL: "1" }).status, 1);
+  assert.equal(f.run(["--recreate"], { MOCK_FAIL: "1" }).status, 1);
   assert.equal(fs.existsSync(f.show().stateFile), false);
   assert.equal(f.status().status, "not-created");
 });

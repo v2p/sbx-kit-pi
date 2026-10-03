@@ -1,6 +1,42 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+usage() {
+  printf '%s\n' \
+    'Usage: sbx-pi [OPTIONS] [--] [PI_ARGS...]' \
+    '       sbx-pi init [--kit KIT ... | --no-kits]' \
+    '       sbx-pi status [OPTIONS]' \
+    '       sbx-pi config show [OPTIONS]' \
+    '       sbx-pi config alias NAME KIT [--replace]' \
+    '       sbx-pi completion bash|zsh' \
+    '' \
+    'Create a sandbox for this workspace, or attach if it already exists.' \
+    '' \
+    'Options:' \
+    '  --recreate           Replace the sandbox; discard sandbox-local changes.' \
+    '                       Host-mounted sessions and workspace files survive.' \
+    '  --import-codex-auth  Copy the host Codex login when creating a sandbox.' \
+    '  --kit KIT            Select mixins (repeatable; replaces manifest kits).' \
+    '  --no-kits            Clear the selected mixins.' \
+    '  --config PATH        Use this project manifest and its workspace.' \
+    '  --no-config          Ignore project manifests; use the current directory.' \
+    '  -h, --help           Show this help without starting Docker Sandbox.' \
+    '' \
+    'status and config show accept only kit and configuration options.' \
+    'Launcher options must precede Pi arguments; use -- to pass Pi --help.' \
+    '' \
+    'Examples:' \
+    '  sbx-pi' \
+    '  sbx-pi --continue' \
+    '  sbx-pi --recreate --kit @node'
+}
+
+if [[ ${1:-} == -h || ${1:-} == --help ]] ||
+   [[ ${1:-} == config && ( ${2:-} == -h || ${2:-} == --help ) ]]; then
+  usage
+  exit 0
+fi
+
 # Completion must bypass workspace discovery and all launch-time side effects.
 if [[ ${1:-} == completion || ${1:-} == _complete ]]; then
   launcher=$(readlink -f "${BASH_SOURCE[0]}")
@@ -13,7 +49,7 @@ if [[ ${1:-} == completion || ${1:-} == _complete ]]; then
   exec node "$kit_dir/scripts/launcher-completion.mjs" "$@"
 fi
 
-update_existing=0
+recreate_existing=0
 import_codex_auth=0
 additional_kits=()
 config_args=()
@@ -81,16 +117,24 @@ elif [[ ${1:-} == init ]]; then
 elif [[ ${1:-} == status ]]; then
   config_command=status
   shift
+elif [[ ${1:-} == config ]]; then
+  printf '%s\n' 'Usage: sbx-pi config show [OPTIONS] | config alias NAME KIT [--replace]' >&2
+  exit 2
+fi
+
+if [[ ${1:-} == -h || ${1:-} == --help ]]; then
+  usage
+  exit 0
 fi
 
 while [[ $config_command != alias ]] && (( $# )); do
   case $1 in
-    --attach)
-      printf '%s\n' '--attach is no longer supported; existing sandboxes are attached automatically' >&2
-      exit 2
+    -h|--help)
+      usage
+      exit 0
       ;;
-    --update)
-      update_existing=1
+    --recreate)
+      recreate_existing=1
       shift
       ;;
     --import-codex-auth)
@@ -119,8 +163,8 @@ while [[ $config_command != alias ]] && (( $# )); do
       config_args+=(--config "$2")
       shift 2
       ;;
-    --no-project-config)
-      config_args+=(--no-project-config)
+    --no-config)
+      config_args+=(--no-config)
       shift
       ;;
     --)
@@ -139,7 +183,7 @@ if [[ $config_command == alias ]]; then
   exec node "$kit_dir/scripts/launcher-config.mjs" alias "$@"
 fi
 if [[ $config_command != resolve ]]; then
-  if (( $# || update_existing || import_codex_auth )); then
+  if (( $# || recreate_existing || import_codex_auth )); then
     printf 'Unexpected arguments for %s\n' "$config_command" >&2
     exit 2
   fi
@@ -186,17 +230,17 @@ if grep -Fxq -- "$sandbox_name" <<< "$existing_sandboxes"; then
   sandbox_exists=1
 fi
 
-if (( sandbox_exists && explicit_kits && ! update_existing )); then
-  printf 'Sandbox %s already exists; use --update to change its kits\n' "$sandbox_name" >&2
+if (( sandbox_exists && explicit_kits && ! recreate_existing )); then
+  printf 'Sandbox %s already exists; use --recreate to change its kits\n' "$sandbox_name" >&2
   exit 2
 fi
 
-if (( sandbox_exists && import_codex_auth && ! update_existing )); then
-  printf 'Sandbox %s already exists; use --update to import Codex credentials into a recreated sandbox\n' "$sandbox_name" >&2
+if (( sandbox_exists && import_codex_auth && ! recreate_existing )); then
+  printf 'Sandbox %s already exists; use --recreate to import Codex credentials into a recreated sandbox\n' "$sandbox_name" >&2
   exit 2
 fi
 
-if (( sandbox_exists && ! update_existing )); then
+if (( sandbox_exists && ! recreate_existing )); then
   node "$kit_dir/scripts/launcher-config.mjs" compare "$config_file"
   sbx run --name "$sandbox_name" -- "${pi_args[@]}"
   exit
@@ -223,7 +267,7 @@ if (( import_codex_auth )); then
   pi_args+=(--sbx-pi-import-codex-auth "$import_file")
 fi
 
-if (( update_existing )); then
+if (( recreate_existing )); then
   if (( sandbox_exists )); then
     printf 'Recreating sandbox %s with the current kit image and selected mixins\n' "$sandbox_name"
     sbx rm -f "$sandbox_name"

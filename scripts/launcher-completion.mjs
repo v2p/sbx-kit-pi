@@ -71,12 +71,12 @@ function complete(args) {
     return ["words", previous.includes("--replace") ? [] : ["--replace"]];
   }
 
-  const options = ["--kit", "--no-kits"];
+  const options = ["--kit", "--no-kits", "--help"];
   if (mode !== "init") {
-    options.push("--config", "--no-project-config");
+    options.push("--config", "--no-config");
   }
   if (mode === "run") {
-    options.push("--update", "--import-codex-auth");
+    options.push("--recreate", "--import-codex-auth");
   }
   for (let i = 0; i < previous.length; i++) {
     const option = previous[i];
