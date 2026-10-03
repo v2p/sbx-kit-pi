@@ -7,15 +7,20 @@ descriptions=(
   --kit 'Select a kit reference or @alias (repeatable)'
   --no-kits 'Clear the selected mixins'
   --help 'Show launcher help'
-  --config 'Use a project manifest and its workspace'
-  --no-config 'Ignore project manifests'
+  --config 'Select Pi TOML and sibling environment YAML'
+  --no-config 'Ignore project discovery'
+  --env 'Load native environment YAML (repeatable)'
+  --env-arg 'Pass a declared Docker environment argument'
+  --env-args-file 'Load declared arguments from a file'
+  --allow-host 'Replace supplemental allowed hosts (repeatable)'
   --recreate 'Replace the sandbox; discard sandbox-local changes'
   --import-codex-auth 'Copy the host Codex login when creating a sandbox'
   --replace 'Replace an existing kit alias'
 )
 if (( CURRENT == 2 )); then
   descriptions+=(
-    init 'Create a project manifest'
+    init 'Create sbxenv.yaml'
+    plan 'Inspect Docker environment changes without applying them'
     config 'Inspect configuration or manage kit aliases'
     status 'Report sandbox status without changing it'
     completion 'Generate a Zsh autoload completion file'

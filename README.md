@@ -8,7 +8,7 @@ billing.
 
 On your **Linux host**, you need:
 
-- Docker Sandboxes with `sbx` and schema-v2 OAuth credential-file support
+- Docker Sandboxes with experimental `sbx env` commands and schema-v2 OAuth credential-file support
 - Node.js 22.19+ and npm
 - A ChatGPT subscription with Codex access
 
@@ -68,9 +68,10 @@ Put launcher options before Pi arguments. The first unrecognized argument starts
 Pi passthrough; `--` makes that boundary explicit.
 
 Sessions live on the host in
-`~/pi-sessions-backup/<project-name>-<workspace-path-hash>/`. Each absolute
-workspace path gets its own sandbox and session directory. Session files may
-contain source code and secrets; keep them private.
+`~/pi-sessions-backup/<project-name>-<project-path-hash>/`. Each absolute
+project configuration directory gets its own default sandbox and session directory.
+A native YAML `name` overrides the sandbox name; its `workspace` may point elsewhere
+or use clone mode. Session files may contain source code and secrets; keep them private.
 
 ### Recreate or upgrade a sandbox
 
@@ -86,80 +87,104 @@ state. Your mounted project files and saved sessions survive. Docker Sandbox's
 OAuth binding can restore its stored credential; a Codex-imported login must be
 seeded again with `--recreate --import-codex-auth`.
 
-Configuration changes are never applied automatically. The launcher warns about
-known drift but still attaches; `--recreate` applies the effective configuration.
-It does not check for new kit releases.
+For native environments, Docker owns planning, approval, and reconciliation.
+Workspace, kit, port, credential, and resource changes require recreation;
+environment/session changes follow `sbx env` behavior. Changes to the Pi kit or
+supplemental allowed hosts also require recreation. Run `sbx-pi plan` to inspect
+the native plan. The launcher does not check for new kit releases.
 
-## Add tools with kits
+## Configure the sandbox
 
-Optional [mixin kits](https://docs.docker.com/ai/sandboxes/customize/kits/) add
-language toolchains, CLIs, or project instructions while Pi remains the runtime.
-For a new sandbox:
+Use Docker's native [sandbox environment file](https://docs.docker.com/ai/sandboxes/configuration/environment-files/)
+for everything it supports: kits, workspaces, read-only mounts, environment
+variables, ports, resources, credentials, MCP, and host lifecycle commands.
+`sbx env` is experimental; use a version supporting layered YAML, `run --detached`,
+and `exec` with environment arguments.
 
-```console
-sbx-pi --kit docker.io/acme/node-kit:1.2.0 --kit ./sandbox-kits/project-tools
-```
-
-Kits are fixed at creation. To change an existing sandbox, pass the **complete**
-desired list:
-
-```console
-sbx-pi --recreate --kit docker.io/acme/node-kit:1.3.0
-sbx-pi --recreate --no-kits
-```
-
-Repeated `--kit` options replace—not extend—the manifest's list. `--no-kits`
-clears the list; any subsequent `--kit` adds to that empty list. Overrides do not
-rewrite configuration. On ordinary reattachment, do not repeat kit arguments.
-
-Supported references are local directories, OCI artifacts, and pinned Git
-references, for example:
-
-```console
-sbx-pi --kit 'git+https://github.com/acme/sbx-kits.git#ref=v1.2.0&dir=node'
-```
-
-The `acme` references above are placeholders; choose real kits you trust. A local
-example is in [`examples/mixins/project-bootstrap/`](examples/mixins/project-bootstrap/).
-
-**Kits execute code, potentially as root.** Review them and pin versions or
-commits; avoid `latest` and `main`. Docker Hub is allowed by default. Other
-publishers need approval in Docker Sandbox's `kit.allowedSources` setting.
-
-## Save project configuration
-
-From your project root:
+From your project configuration directory:
 
 ```console
 sbx-pi init --kit docker.io/acme/node-kit:1.2.0 --kit ./sandbox-kits/project-tools
 ```
 
-This creates and displays `sbx-pi.toml` without starting a sandbox. Review and
-commit it:
+This creates and displays **`sbxenv.yaml`**, without Docker or an automatic launch:
 
-```toml
-schema_version = 1
-kits = ["docker.io/acme/node-kit:1.2.0", "./sandbox-kits/project-tools"]
+```yaml
+schemaVersion: "1"
+agent: pi-openai-codex
+workspace: .
+kits:
+  - docker.io/acme/node-kit:1.2.0
+  - ./sandbox-kits/project-tools
+additionalWorkspaces:
+  - path: ../reference-docs
+    readOnly: true
+ports:
+  - sandbox: 3000
+    host: 8080
+sandboxOptions:
+  cpus: 2
+  memory: 4g
 ```
 
-`init` never overwrites an existing file. Without `--kit`, it writes an empty
-list; it does not copy a parent manifest or snapshot an existing sandbox. Local
-kits must be inside the project so the manifest remains portable.
+The example includes optional settings to add after initialization. `init` never
+overwrites an existing YAML file, inherits a parent configuration, or persists
+personal notification settings. Local kit paths must remain inside the project
+for a portable generated file. The `acme` references are placeholders; choose
+real reviewed kits. A local example is in
+[`examples/mixins/project-bootstrap/`](examples/mixins/project-bootstrap/).
 
-Normal launches discover the nearest `sbx-pi.toml` by walking upward from the
-current directory. Its directory becomes the workspace, even when launching
-from a subdirectory. Project kit paths beginning with `.` are relative to that
-manifest; CLI paths are relative to where you invoke the launcher.
+**Kits and lifecycle commands execute code, including on the host.** Review them,
+pin versions/commits, and inspect the approval plan. Docker's source restrictions,
+credential approvals, and organization policies remain in force.
+
+Launches walk upward to the nearest directory containing `sbxenv.yaml` or
+`sbx-pi.toml`, loading both when present. Docker resolves paths and merges YAML;
+the launcher does not flatten YAML into CLI flags. It adds a stable, private YAML
+layer outside the workspace containing its Pi kit and persistent session mount.
+Only missing `agent` and `name` values receive launcher defaults. Omitting
+`workspace` retains Docker's mountless behavior.
+The agent must be `pi-openai-codex`; use `sbx env` directly for other agents.
 
 | Option | Effect |
 | --- | --- |
-| `--config PATH` | Select a manifest explicitly; use its directory as workspace. |
-| `--no-config` | Ignore project discovery; use the current directory as workspace. |
-| `--kit KIT` | Replace configured kits; repeat for multiple kits. |
-| `--no-kits` | Use no mixins. |
+| `--env PATH` | Select native YAML or its directory; repeat for ordered layers. |
+| `--env-arg NAME=VALUE` | Forward a declared environment argument to Docker. |
+| `--env-args-file PATH` | Forward an argument file; repeat as needed. |
+| `--config PATH` | Select Pi TOML and its sibling `sbxenv.yaml`. |
+| `--no-config` | Disable project discovery; retain the legacy current-directory launch. |
+| `--allow-host HOST` | Replace supplemental allowed hosts; repeat for multiple hosts. |
 
-`--config` and `--no-config` cannot be combined. Neither is accepted by `init`.
-A launch without a manifest works normally and never creates one automatically.
+`--env` and `--config` cannot be combined, nor combined with `--no-config`.
+With explicit YAML layers, Pi TOML is loaded beside the first layer. As with native
+`sbx env` using explicit paths, `~/.sbxenv.yaml` is not implicitly loaded.
+YAML argument expressions are resolved by Docker, not by the launcher.
+
+### Pi-only and missing native settings
+
+Optional **`sbx-pi.toml`** holds settings not covered by `sbx env`:
+
+```toml
+schema_version = 1
+notifications = "auto"
+
+[network]
+allow = ["registry.npmjs.org", "api.github.com"]
+```
+
+Docker currently has no direct environment-file allowed-hosts field. The launcher
+turns this list into a permission-only mixin for this sandbox; it never adds global
+policy rules. Explicit denies and organization policy still take precedence.
+Changing this list requires `--recreate`. An empty list removes supplemental
+permissions on recreation, not the base Pi kit's required hosts.
+
+### Legacy projects
+
+TOML-only projects and launches without configuration keep their existing behavior.
+Legacy `kits`, `--kit`, and `--no-kits` remain supported there. Once YAML exists,
+move `kits` into YAML and remove the TOML key; CLI kit overrides are rejected to
+avoid two sources of truth. `init --kit` remains the convenient way to generate
+YAML, including expansion of personal aliases. See [configuration details](docs/configuration.md).
 
 ### Personal aliases and notifications
 
@@ -180,11 +205,11 @@ You can create aliases from the CLI:
 sbx-pi config alias node docker.io/acme/node-kit:1.2.0
 sbx-pi config alias node docker.io/acme/node-kit:1.3.0 --replace
 sbx-pi init --kit @node
-sbx-pi --kit @node
 ```
 
-Aliases do not inject default kits. `init` expands them into concrete references
-for sharing. Alias writes preserve settings but reformat TOML and remove comments.
+Aliases do not inject default kits. `init` expands them into concrete YAML references
+for sharing; native YAML does not interpret `@aliases`. Alias writes preserve
+settings but reformat TOML and remove comments.
 See [configuration details](docs/configuration.md) for path and write behavior.
 
 Desktop notifications are enabled automatically when host `notify-send` is
@@ -207,13 +232,17 @@ environment variable, project config, personal config, then `auto`. Values are
 ```console
 sbx-pi config show
 sbx-pi status
+sbx-pi plan
 ```
 
-Both emit JSON and accept kit/configuration options. `config show` resolves
-configuration without Docker; `status` lists sandboxes and reports `not-created`,
-`unknown`, `current`, or `drifted`. Neither creates or changes a sandbox.
-Reference comparison cannot detect edits inside local kits or changes behind
-mutable remote references; recreate explicitly when those change.
+`config show` emits launcher configuration as JSON without invoking Docker.
+`status` emits JSON; native environments report `not-created`, `exists`, or
+`unknown` (for parameterized names), without claiming complete drift detection.
+`plan` delegates to `sbx env plan` with the same layers used for launch; it writes
+only the private launcher adapter, not session directories or sandbox resources.
+These commands accept configuration options. Neither `status` nor `plan` starts Pi.
+Docker's plan does not detect all changes inside local kits or mutable references;
+recreate explicitly when those change.
 
 Copyable TOML examples are in [`examples/config/`](examples/config/).
 

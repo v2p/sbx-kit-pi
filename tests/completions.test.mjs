@@ -88,6 +88,10 @@ test("completion offers context-specific launcher commands and flags, not Pi arg
   assert.deepEqual(f.complete("status", "--rec"), ["words"]);
   assert.deepEqual(f.complete("config", "show", "--con"), ["words", "--config"]);
   assert.deepEqual(f.complete("--config", "a file"), ["files"]);
+  assert.deepEqual(f.complete("--env", "a file"), ["files"]);
+  assert.deepEqual(f.complete("--env-arg", "channel="), ["words"]);
+  assert.deepEqual(f.complete("--allow-host", "api."), ["words"]);
+  assert.ok(f.complete("plan", "--").includes("--env"));
   assert.deepEqual(f.complete("--kit", "./some dir"), ["files"]);
   assert.deepEqual(f.complete("--kit", "@node", "--"), [
     "words",
@@ -96,6 +100,10 @@ test("completion offers context-specific launcher commands and flags, not Pi arg
     "--help",
     "--config",
     "--no-config",
+    "--env",
+    "--env-arg",
+    "--env-args-file",
+    "--allow-host",
     "--recreate",
     "--import-codex-auth",
   ]);

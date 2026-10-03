@@ -50,7 +50,7 @@ function complete(args) {
     if (!["show", "alias"].includes(mode)) {
       return ["words", []];
     }
-  } else if (["init", "status"].includes(previous[0])) {
+  } else if (["init", "status", "plan"].includes(previous[0])) {
     mode = previous.shift();
   }
 
@@ -73,7 +73,14 @@ function complete(args) {
 
   const options = ["--kit", "--no-kits", "--help"];
   if (mode !== "init") {
-    options.push("--config", "--no-config");
+    options.push(
+      "--config",
+      "--no-config",
+      "--env",
+      "--env-arg",
+      "--env-args-file",
+      "--allow-host",
+    );
   }
   if (mode === "run") {
     options.push("--recreate", "--import-codex-auth");
@@ -84,12 +91,16 @@ function complete(args) {
       // Stop at the Pi passthrough boundary, including an explicit -- separator.
       return ["words", []];
     }
-    if (option === "--kit" || option === "--config") {
+    if (
+      ["--kit", "--config", "--env", "--env-arg", "--env-args-file", "--allow-host"].includes(
+        option,
+      )
+    ) {
       if (i === previous.length - 1) {
         if (option === "--kit" && current.startsWith("@")) {
           return ["words", aliases().map((name) => `@${name}`)];
         }
-        return ["files", []];
+        return [["--env-arg", "--allow-host"].includes(option) ? "words" : "files", []];
       }
       i++;
     }
@@ -97,7 +108,7 @@ function complete(args) {
   return [
     "words",
     mode === "run" && previous.length === 0
-      ? ["init", "config", "status", "completion", ...options]
+      ? ["init", "config", "status", "plan", "completion", ...options]
       : options,
   ];
 }

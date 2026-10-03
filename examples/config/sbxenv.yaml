@@ -1,0 +1,27 @@
+# Copy to your project configuration directory and launch with sbx-pi.
+# Keep this file outside writable workspace trees when practical.
+schemaVersion: "1"
+agent: pi-openai-codex
+workspace: .
+
+# sbx-pi adds its Pi kit and persistent session mount automatically.
+# Replace placeholders with reviewed, available kits before running.
+kits:
+  - docker.io/acme/node-kit:1.2.0
+  - ./sandbox-kits/project-tools
+
+# Paths are relative to this YAML file; these are directories, not file mounts.
+additionalWorkspaces:
+  - path: ../reference-docs
+    readOnly: true
+
+env:
+  NODE_ENV: development
+
+ports:
+  - sandbox: 3000
+    host: 8080
+
+sandboxOptions:
+  cpus: 2
+  memory: 4g
