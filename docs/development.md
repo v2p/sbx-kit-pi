@@ -15,6 +15,11 @@ is available, and runs `sbx kit validate .` when `sbx` is available. Run skipped
 checks on a Docker Sandbox host. For a quick iteration use `npm test`; audit
 separately with `npm run audit`.
 
+Install Zsh to run the generated `.zfunc` completion integration tests locally.
+Without Zsh those tests are skipped; `SBX_PI_REQUIRE_ZSH=1 npm test` requires them.
+GitHub Actions installs Zsh and sets this flag so autoload registration and
+completion dispatch are tested automatically, without editing shell startup files.
+
 ## Images and releases
 
 The Makefile is limited to image release tasks and optional command installation:

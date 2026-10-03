@@ -8,6 +8,19 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const zshAvailable = spawnSync("zsh", ["--version"]).status === 0;
+if (process.env.SBX_PI_REQUIRE_ZSH === "1" && !zshAvailable) {
+  throw new Error("Zsh is required for completion integration tests");
+}
+
+function generate(f, command = "my-pi") {
+  const result = f.execute(command, ["completion", "zsh"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stderr, "");
+  const directory = path.join(f.home, ".zfunc");
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(path.join(directory, `_${command}`), result.stdout);
+  return directory;
+}
 
 function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-pi-completion-"));
@@ -66,7 +79,7 @@ test("completion offers context-specific launcher commands and flags, not Pi arg
   const f = fixture(t);
   assert.ok(f.complete("").includes("init"));
   assert.ok(f.complete("").includes("completion"));
-  assert.deepEqual(f.complete("completion", ""), ["words", "bash", "zsh"]);
+  assert.deepEqual(f.complete("completion", ""), ["words", "zsh"]);
   assert.deepEqual(f.complete("completion", "z"), ["words", "zsh"]);
   assert.deepEqual(f.complete("completion", "zsh", ""), ["words"]);
   assert.deepEqual(f.complete("config", ""), ["words", "show", "alias"]);
@@ -114,83 +127,59 @@ test("completion reads global aliases and tolerates missing or malformed persona
   assert.equal(fs.existsSync(f.global), false);
 });
 
-test("completion initialization rejects invalid shells without emitting code or writing files", (t) => {
+test("completion generator rejects invalid arguments and only writes code to stdout", (t) => {
   const f = fixture(t);
-  for (const args of [[], ["fish"], ["bash", "extra"], ["--recreate"]]) {
+  for (const args of [[], ["fish"], ["bash"], ["zsh", "extra"], ["--recreate"]]) {
     const result = f.execute("my-pi", ["completion", ...args]);
     assert.equal(result.status, 2);
     assert.equal(result.stdout, "");
-    assert.match(result.stderr, /Usage: sbx-pi completion bash\|zsh/);
+    assert.match(result.stderr, /Usage: sbx-pi completion zsh/);
   }
-  for (const shell of ["bash", "zsh"]) {
-    const result = f.execute("my-pi", ["completion", shell]);
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.stderr, "");
-    assert.ok(result.stdout.length > 0);
-  }
+  const result = f.execute("my-pi", ["completion", "zsh"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stderr, "");
+  assert.ok(result.stdout.length > 0);
   assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
   assert.equal(fs.existsSync(f.env.XDG_STATE_HOME), false);
   assert.deepEqual(fs.readdirSync(f.home), []);
 });
 
-test("Bash eval initialization registers custom names and can run repeatedly", (t) => {
-  const f = fixture(t);
-  fs.writeFileSync(path.join(f.workspace, "project config.toml"), "");
-  const bashComplete = (...words) => {
-    const result = f.execute("bash", [
-      "-c",
-      'eval "$(my-pi completion bash)"; eval "$(my-pi completion bash)"; complete -p my-pi >/dev/null || exit 1; COMP_WORDS=("my-pi" "$@"); COMP_CWORD=$((${#COMP_WORDS[@]} - 1)); _sbx_pi_complete; if ((${#COMPREPLY[@]})); then printf "%s\\0" "${COMPREPLY[@]}"; fi',
-      "test",
-      ...words,
-    ]);
-    assert.equal(result.status, 0, result.stderr);
-    return result.stdout.split("\0").filter(Boolean);
-  };
-  assert.deepEqual(bashComplete("--kit", "@node_"), ["@node_tools"]);
-  assert.deepEqual(bashComplete("--config", "project"), ["project config.toml"]);
-  assert.deepEqual(bashComplete("--", "--"), []);
-  assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
-  assert.deepEqual(fs.readdirSync(f.home), []);
-});
-
 test(
-  "Zsh eval initialization requires compinit and supports repeated registration",
+  "Zsh compinit discovers generated files for default and custom command names",
   { skip: !zshAvailable },
   (t) => {
     const f = fixture(t);
-    const missing = f.execute("zsh", [
-      "-f",
-      "-c",
-      'eval "$(my-pi completion zsh)"; (( $+functions[_sbx_pi_complete] )) && exit 1; exit 0',
-    ]);
-    assert.equal(missing.status, 0);
-    assert.match(missing.stderr, /initialize compinit/);
+    fs.symlinkSync(path.join(root, "scripts/run"), path.join(f.dir, "bin", "sbx-pi"));
+    generate(f, "sbx-pi");
+    const directory = generate(f);
     // Runner images can include insecure completion directories. Ignore them rather
     // than prompting on a nonexistent terminal, and exercise that case explicitly.
     const insecure = path.join(f.dir, "insecure-completions");
     fs.mkdirSync(insecure);
     fs.chmodSync(insecure, 0o777);
-    f.env.SBX_PI_TEST_FPATH = insecure;
+    f.env.SBX_PI_TEST_FPATH = directory;
+    f.env.SBX_PI_TEST_INSECURE = insecure;
     const result = f.execute("zsh", [
       "-f",
       "-c",
-      'fpath=($SBX_PI_TEST_FPATH $fpath); autoload -Uz compinit; compinit -i -D; eval "$(my-pi completion zsh)"; eval "$(my-pi completion zsh)"; [[ ${_comps[my-pi]} == _sbx_pi_complete ]] || exit 1; function compadd { shift 2; printf "%s\\0" "$@"; }; words=(my-pi --kit @node_); CURRENT=${#words}; _sbx_pi_complete',
+      'fpath=($SBX_PI_TEST_FPATH $SBX_PI_TEST_INSECURE $fpath); autoload -Uz compinit; compinit -i -D; [[ ${_comps[sbx-pi]} == _sbx-pi && ${_comps[my-pi]} == _my-pi ]] || exit 1; function compadd { while [[ $1 != -- ]]; do shift; done; shift; printf "%s\\0" "$@"; }; for command in sbx-pi my-pi; do words=($command --kit @node_); CURRENT=${#words}; ${_comps[$command]}; done',
     ]);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stderr, "");
-    assert.deepEqual(result.stdout.split("\0").filter(Boolean), ["@node_tools"]);
+    assert.deepEqual(result.stdout.split("\0").filter(Boolean), ["@node_tools", "@node_tools"]);
     assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
-    assert.deepEqual(fs.readdirSync(f.home), []);
+    assert.deepEqual(fs.readdirSync(f.home), [".zfunc"]);
   },
 );
 
-test("Zsh eval completion dispatches words versus files", { skip: !zshAvailable }, (t) => {
+test("Zsh autoload completion dispatches words versus files", { skip: !zshAvailable }, (t) => {
   const f = fixture(t);
+  f.env.SBX_PI_TEST_FPATH = generate(f);
   const zshComplete = (...input) => {
     const result = f.execute("zsh", [
       "-f",
       "-c",
-      'autoload -Uz compinit; compinit -i -D; eval "$(my-pi completion zsh)"; function compadd { shift 2; printf "%s\\0" "$@"; }; function _files { printf "files\\0"; }; words=(my-pi "$@"); CURRENT=${#words}; _sbx_pi_complete',
+      'fpath=($SBX_PI_TEST_FPATH $fpath); autoload -Uz compinit; compinit -i -D; function compadd { while [[ $1 != -- ]]; do shift; done; shift; printf "%s\\0" "$@"; }; function _files { printf "files\\0"; }; words=(my-pi "$@"); CURRENT=${#words}; ${_comps[my-pi]}',
       "test",
       ...input,
     ]);
@@ -201,5 +190,36 @@ test("Zsh eval completion dispatches words versus files", { skip: !zshAvailable 
   assert.deepEqual(zshComplete("--kit", "@node_"), ["@node_tools"]);
   assert.deepEqual(zshComplete("--config", "project"), ["files"]);
   assert.deepEqual(zshComplete("--", "--"), []);
+  assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
+});
+
+test("Zsh displays help without inserting descriptions", { skip: !zshAvailable }, (t) => {
+  const f = fixture(t);
+  f.env.SBX_PI_TEST_FPATH = generate(f);
+  const suggest = (...input) => {
+    const result = f.execute("zsh", [
+      "-f",
+      "-c",
+      'fpath=($SBX_PI_TEST_FPATH $fpath); autoload -Uz compinit; compinit -i -D; function compadd { local -a labels; while [[ $1 != -- ]]; do if [[ $1 == -d ]]; then shift; labels=("${(@P)1}"); fi; shift; done; shift; printf "%s\\0" "${labels[@]}" "INSERT" "$@"; }; words=(my-pi "$@"); CURRENT=${#words}; ${_comps[my-pi]}',
+      "test",
+      ...input,
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    const output = result.stdout.split("\0").filter(Boolean);
+    const separator = output.indexOf("INSERT");
+    return { labels: output.slice(0, separator), words: output.slice(separator + 1) };
+  };
+  for (const input of [[""], ["--rec"], ["config", "s"], ["completion", "z"]]) {
+    const { labels, words } = suggest(...input);
+    assert.ok(words.length > 0);
+    assert.equal(labels.length, words.length);
+    for (let i = 0; i < words.length; i++) {
+      assert.ok(labels[i].startsWith(`${words[i]} -- `), labels[i]);
+      assert.ok(!words[i].includes(" -- "));
+    }
+  }
+  const alias = suggest("config", "alias", "node");
+  assert.deepEqual(alias.words, ["node", "node_tools"]);
+  assert.deepEqual(alias.labels, alias.words);
   assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
 });

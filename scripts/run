@@ -8,7 +8,7 @@ usage() {
     '       sbx-pi status [OPTIONS]' \
     '       sbx-pi config show [OPTIONS]' \
     '       sbx-pi config alias NAME KIT [--replace]' \
-    '       sbx-pi completion bash|zsh' \
+    '       sbx-pi completion zsh' \
     '' \
     'Create a sandbox for this workspace, or attach if it already exists.' \
     '' \
@@ -44,7 +44,7 @@ if [[ ${1:-} == completion || ${1:-} == _complete ]]; then
   command=$1
   shift
   if [[ $command == completion ]]; then
-    exec node "$kit_dir/scripts/completion-init.mjs" "${0##*/}" "$@"
+    exec node "$kit_dir/scripts/completion-generate.mjs" "${0##*/}" "$@"
   fi
   exec node "$kit_dir/scripts/launcher-completion.mjs" "$@"
 fi

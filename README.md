@@ -217,27 +217,35 @@ mutable remote references; recreate explicitly when those change.
 
 Copyable TOML examples are in [`examples/config/`](examples/config/).
 
-## Optional shell completion
+## Optional Zsh completion
 
-Add to your interactive `~/.bashrc` (Bash 4+):
-
-```bash
-eval "$(sbx-pi completion bash)"
-```
-
-Or to `~/.zshrc`, **after** your framework or `compinit` initializes completion:
+Generate an autoload file manually on the host:
 
 ```zsh
-eval "$(sbx-pi completion zsh)"
+mkdir -p ~/.zfunc
+sbx-pi completion zsh > ~/.zfunc/_sbx-pi
 ```
 
-Without a framework, initialize Zsh completion with `autoload -Uz compinit` and
-`compinit` first. Restart your shell. Use your installed command name if you
-customized it. Completion suggests launcher flags, aliases, and paths; it stops
-at Pi arguments. It makes no Docker or network calls and writes no state.
+Add to `~/.zshrc`, **before** your framework initializes completion:
 
-To disable it, remove the line and restart. Never put completion scripts in
-`/etc/sandbox-persistent.sh`.
+```zsh
+fpath=(~/.zfunc $fpath)
+```
+
+Without a framework, add `autoload -Uz compinit` and `compinit` after that line.
+Restart your shell; if you use a cached completion dump, remove `~/.zcompdump`
+(or your framework's configured dump) so `compinit` discovers the new file.
+If you customized the installed command name, use it in both the generator call
+and filename: `my-pi completion zsh > ~/.zfunc/_my-pi`.
+
+The generator only prints to stdout; it does not install files or change shell
+configuration. Regenerate the file after updating the launcher. Completion suggests
+launcher commands and flags with short descriptions, plus aliases and paths;
+it stops at Pi arguments. It makes no Docker
+or network calls and writes no state. Bash completion is not provided.
+
+To disable it, delete the generated file and refresh the completion dump before
+restarting.
 
 ## Security and sign out
 

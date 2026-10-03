@@ -39,7 +39,7 @@ function complete(args) {
   const previous = args.slice(0, -1);
   let mode = "run";
   if (previous[0] === "completion") {
-    return ["words", previous.length === 1 ? ["bash", "zsh"] : []];
+    return ["words", previous.length === 1 ? ["zsh"] : []];
   }
   if (previous[0] === "config") {
     previous.shift();

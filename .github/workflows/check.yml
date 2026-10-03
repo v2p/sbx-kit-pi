@@ -20,5 +20,7 @@ jobs:
           cache: npm
       - name: Install Zsh for completion tests
         run: sudo apt-get update && sudo apt-get install -y zsh
-      - name: Run project checks
+      - name: Run project checks (including Zsh autoload integration)
+        env:
+          SBX_PI_REQUIRE_ZSH: "1"
         run: ./scripts/check

@@ -1,13 +1,46 @@
-# Zsh completion body, wrapped and registered by completion-init.mjs.
+# Autoload body; completion-generate.mjs prepends the installed command's #compdef header.
 
-local -a response
-local kind
+local -a response display
+local kind candidate description
+local -A descriptions
+descriptions=(
+  --kit 'Select a kit reference or @alias (repeatable)'
+  --no-kits 'Clear the selected mixins'
+  --help 'Show launcher help'
+  --config 'Use a project manifest and its workspace'
+  --no-config 'Ignore project manifests'
+  --recreate 'Replace the sandbox; discard sandbox-local changes'
+  --import-codex-auth 'Copy the host Codex login when creating a sandbox'
+  --replace 'Replace an existing kit alias'
+)
+if (( CURRENT == 2 )); then
+  descriptions+=(
+    init 'Create a project manifest'
+    config 'Inspect configuration or manage kit aliases'
+    status 'Report sandbox status without changing it'
+    completion 'Generate a Zsh autoload completion file'
+  )
+elif (( CURRENT == 3 )); then
+  case ${words[2]} in
+    config)
+      descriptions+=(
+        show 'Print resolved configuration as JSON'
+        alias 'Save a named kit alias in global configuration'
+      ) ;;
+    completion)
+      descriptions+=(zsh 'Print Zsh completion code to stdout') ;;
+  esac
+fi
 response=("${(@f)$("${words[1]}" _complete "${(@)words[2,CURRENT]}" 2>/dev/null)}")
 kind=${response[1]:-words}
 if [[ $kind == files ]]; then
   _files
 else
   response=("${(@)response[2,-1]}")
-  (( ${#response} )) && compadd -Q -- "${response[@]}"
+  for candidate in "${response[@]}"; do
+    description=${descriptions[$candidate]}
+    display+=("${candidate}${description:+ -- ${description}}")
+  done
+  (( ${#response} )) && compadd -Q -d display -- "${response[@]}"
 fi
 return 0
