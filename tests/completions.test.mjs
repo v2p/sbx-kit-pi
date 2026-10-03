@@ -164,12 +164,19 @@ test(
     ]);
     assert.equal(missing.status, 0);
     assert.match(missing.stderr, /initialize compinit/);
+    // Runner images can include insecure completion directories. Ignore them rather
+    // than prompting on a nonexistent terminal, and exercise that case explicitly.
+    const insecure = path.join(f.dir, "insecure-completions");
+    fs.mkdirSync(insecure);
+    fs.chmodSync(insecure, 0o777);
+    f.env.SBX_PI_TEST_FPATH = insecure;
     const result = f.execute("zsh", [
       "-f",
       "-c",
-      'autoload -Uz compinit; compinit -D; eval "$(my-pi completion zsh)"; eval "$(my-pi completion zsh)"; [[ ${_comps[my-pi]} == _sbx_pi_complete ]] || exit 1; function compadd { shift 2; printf "%s\\0" "$@"; }; words=(my-pi --kit @node_); CURRENT=${#words}; _sbx_pi_complete',
+      'fpath=($SBX_PI_TEST_FPATH $fpath); autoload -Uz compinit; compinit -i -D; eval "$(my-pi completion zsh)"; eval "$(my-pi completion zsh)"; [[ ${_comps[my-pi]} == _sbx_pi_complete ]] || exit 1; function compadd { shift 2; printf "%s\\0" "$@"; }; words=(my-pi --kit @node_); CURRENT=${#words}; _sbx_pi_complete',
     ]);
     assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, "");
     assert.deepEqual(result.stdout.split("\0").filter(Boolean), ["@node_tools"]);
     assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
     assert.deepEqual(fs.readdirSync(f.home), []);
@@ -182,7 +189,7 @@ test("Zsh eval completion dispatches words versus files", { skip: !zshAvailable 
     const result = f.execute("zsh", [
       "-f",
       "-c",
-      'autoload -Uz compinit; compinit -D; eval "$(my-pi completion zsh)"; function compadd { shift 2; printf "%s\\0" "$@"; }; function _files { printf "files\\0"; }; words=(my-pi "$@"); CURRENT=${#words}; _sbx_pi_complete',
+      'autoload -Uz compinit; compinit -i -D; eval "$(my-pi completion zsh)"; function compadd { shift 2; printf "%s\\0" "$@"; }; function _files { printf "files\\0"; }; words=(my-pi "$@"); CURRENT=${#words}; _sbx_pi_complete',
       "test",
       ...input,
     ]);
