@@ -10,6 +10,12 @@ npm ci --ignore-scripts --no-audit --no-fund
 printf '%s\n' '==> Auditing test dependencies'
 npm run audit
 
+printf '%s\n' '==> Checking code formatting'
+npm run format:check
+
+printf '%s\n' '==> Linting JavaScript and TypeScript'
+npm run lint
+
 printf '%s\n' '==> Running static tests'
 npm test
 

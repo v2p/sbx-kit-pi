@@ -62,7 +62,10 @@ async function main() {
     throw new Error("Usage: import-codex-auth.mjs CODEX_AUTH_JSON PI_AUTH_JSON");
   }
 
-  const source = object(await readJson(sourcePath, "Codex authentication file"), "Codex authentication file");
+  const source = object(
+    await readJson(sourcePath, "Codex authentication file"),
+    "Codex authentication file",
+  );
   const tokens = object(source.tokens, "Codex authentication tokens");
   const access = requiredString(tokens.access_token, "Codex access token");
   const refresh = requiredString(tokens.refresh_token, "Codex refresh token");
@@ -81,9 +84,10 @@ async function main() {
 
   const tokenAccountId = tokens.account_id;
   const claimAccountId = claims["https://api.openai.com/auth"]?.chatgpt_account_id;
-  const accountId = typeof tokenAccountId === "string" && tokenAccountId.length > 0
-    ? tokenAccountId
-    : claimAccountId;
+  const accountId =
+    typeof tokenAccountId === "string" && tokenAccountId.length > 0
+      ? tokenAccountId
+      : claimAccountId;
   if (typeof accountId === "string" && accountId.length > 0) {
     credential.accountId = accountId;
   }

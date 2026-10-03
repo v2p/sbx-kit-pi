@@ -1,0 +1,11 @@
+# Copy to sbx-pi.toml at your project root.
+schema_version = 1
+notifications = "auto"
+
+# Concrete pinned references keep shared manifests portable.
+# Relative local kit paths are resolved against the manifest's directory.
+# Replace these examples with reviewed, available kits before running.
+kits = [
+  "docker.io/acme/node-kit:1.2.0",
+  "./sandbox-kits/project-tools",
+]

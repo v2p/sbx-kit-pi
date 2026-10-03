@@ -4,6 +4,10 @@ set -euo pipefail
 update_existing=0
 import_codex_auth=0
 additional_kits=()
+config_args=()
+explicit_kits=0
+config_file=
+config_command=resolve
 import_file=
 notification_file=
 notification_listener_pid=
@@ -37,6 +41,9 @@ notification_listener() {
 }
 
 cleanup_host_state() {
+  if [[ -n $config_file ]]; then
+    rm -f -- "$config_file"
+  fi
   if [[ -n $import_file ]]; then
     rm -f -- "$import_file"
   fi
@@ -50,7 +57,21 @@ cleanup_host_state() {
 }
 trap cleanup_host_state EXIT
 
-while (( $# )); do
+if [[ ${1:-} == config && ${2:-} == show ]]; then
+  config_command=show
+  shift 2
+elif [[ ${1:-} == config && ${2:-} == alias ]]; then
+  config_command=alias
+  shift 2
+elif [[ ${1:-} == init ]]; then
+  config_command=init
+  shift
+elif [[ ${1:-} == status ]]; then
+  config_command=status
+  shift
+fi
+
+while [[ $config_command != alias ]] && (( $# )); do
   case $1 in
     --attach)
       printf '%s\n' '--attach is no longer supported; existing sandboxes are attached automatically' >&2
@@ -69,8 +90,26 @@ while (( $# )); do
         printf 'Missing kit reference after --kit\n' >&2
         exit 2
       fi
-      additional_kits+=("$2")
+      explicit_kits=1
+      config_args+=(--kit "$2")
       shift 2
+      ;;
+    --no-kits)
+      explicit_kits=1
+      config_args+=(--no-kits)
+      shift
+      ;;
+    --config)
+      if (( $# < 2 )); then
+        printf 'Missing path after --config\n' >&2
+        exit 2
+      fi
+      config_args+=(--config "$2")
+      shift 2
+      ;;
+    --no-project-config)
+      config_args+=(--no-project-config)
+      shift
       ;;
     --)
       shift
@@ -84,11 +123,29 @@ done
 
 launcher=$(readlink -f "${BASH_SOURCE[0]}")
 kit_dir=$(cd "$(dirname "$launcher")/.." && pwd -P)
-workspace=$(pwd -P)
+if [[ $config_command == alias ]]; then
+  exec node "$kit_dir/scripts/launcher-config.mjs" alias "$@"
+fi
+if [[ $config_command != resolve ]]; then
+  if (( $# || update_existing || import_codex_auth )); then
+    printf 'Unexpected arguments for %s\n' "$config_command" >&2
+    exit 2
+  fi
+  exec node "$kit_dir/scripts/launcher-config.mjs" "$config_command" "${config_args[@]}"
+fi
+
+config_file=$(mktemp)
+node "$kit_dir/scripts/launcher-config.mjs" resolve "${config_args[@]}" > "$config_file"
+mapfile -d '' -t resolved < <(node "$kit_dir/scripts/launcher-config.mjs" fields "$config_file")
+workspace=${resolved[0]}
+notifications=${resolved[1]}
+sandbox_name=${resolved[2]}
+project_file=${resolved[3]}
+additional_kits=("${resolved[@]:4}")
 project_name=$(basename "$workspace")
 workspace_hash=$(printf '%s' "$workspace" | git hash-object --stdin)
-sandbox_name="pi-openai-codex-${project_name}-${workspace_hash:0:12}"
 session_dir="$HOME/pi-sessions-backup/${project_name}-${workspace_hash:0:12}"
+cd "$workspace"
 skills_dir="$session_dir/skills"
 
 mkdir -p "$skills_dir"
@@ -97,23 +154,6 @@ pi_args=(
   --session-dir "$session_dir"
   "$@"
 )
-
-notifications=${SBX_PI_NOTIFICATIONS:-auto}
-case ${notifications,,} in
-  auto)
-    notifications=auto
-    ;;
-  1|true|on)
-    notifications=on
-    ;;
-  0|false|off)
-    notifications=off
-    ;;
-  *)
-    printf 'Invalid SBX_PI_NOTIFICATIONS value: %s (expected auto, on, or off)\n' "$notifications" >&2
-    exit 2
-    ;;
-esac
 
 if [[ $notifications != off ]]; then
   if command -v notify-send >/dev/null 2>&1; then
@@ -134,7 +174,7 @@ if grep -Fxq -- "$sandbox_name" <<< "$existing_sandboxes"; then
   sandbox_exists=1
 fi
 
-if (( sandbox_exists && ${#additional_kits[@]} && ! update_existing )); then
+if (( sandbox_exists && explicit_kits && ! update_existing )); then
   printf 'Sandbox %s already exists; use --update to change its kits\n' "$sandbox_name" >&2
   exit 2
 fi
@@ -145,8 +185,13 @@ if (( sandbox_exists && import_codex_auth && ! update_existing )); then
 fi
 
 if (( sandbox_exists && ! update_existing )); then
+  node "$kit_dir/scripts/launcher-config.mjs" compare "$config_file"
   sbx run --name "$sandbox_name" -- "${pi_args[@]}"
   exit
+fi
+
+if (( ! sandbox_exists )) && [[ -z $project_file ]]; then
+  printf '%s\n' 'Run sbx-pi init to persist this project’s sandbox setup.' >&2
 fi
 
 import_dir=
@@ -170,9 +215,17 @@ if (( update_existing )); then
   if (( sandbox_exists )); then
     printf 'Recreating sandbox %s with the current kit image and selected mixins\n' "$sandbox_name"
     sbx rm -f "$sandbox_name"
+    node "$kit_dir/scripts/launcher-config.mjs" forget "$config_file"
   else
     printf 'Sandbox %s does not exist; creating it with the current kit image and selected mixins\n' "$sandbox_name"
   fi
+fi
+
+printf 'Creating sandbox %s with mixins:\n' "$sandbox_name"
+if (( ${#additional_kits[@]} )); then
+  printf '  %s\n' "${additional_kits[@]}"
+else
+  printf '  (none)\n'
 fi
 
 kit_args=(--kit "$kit_dir")
@@ -185,17 +238,6 @@ if [[ -n $import_dir ]]; then
   volume_args+=("$import_dir")
 fi
 
-if (( import_codex_auth )); then
-  sbx run \
-    --name "$sandbox_name" \
-    "${kit_args[@]}" \
-    pi-openai-codex \
-    "$workspace" \
-    "${volume_args[@]}" \
-    -- "${pi_args[@]}"
-  exit
-fi
-
 sbx run \
   --name "$sandbox_name" \
   "${kit_args[@]}" \
@@ -203,3 +245,4 @@ sbx run \
   "$workspace" \
   "${volume_args[@]}" \
   -- "${pi_args[@]}"
+node "$kit_dir/scripts/launcher-config.mjs" record "$config_file"

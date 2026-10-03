@@ -1,0 +1,8 @@
+# Copy to ~/.config/sbx-pi/config.toml (or $XDG_CONFIG_HOME/sbx-pi/config.toml).
+schema_version = 1
+notifications = "auto"
+
+# Illustrative references: replace these with kits you trust and can pull.
+[kit_aliases]
+node = "docker.io/acme/node-kit:1.2.0"
+github = "docker.io/acme/github-kit:2.3"

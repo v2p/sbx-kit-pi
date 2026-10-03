@@ -7,9 +7,11 @@ const test = require("node:test");
 const YAML = require("yaml");
 
 const root = path.resolve(__dirname, "..");
-const { createJiti } = require(require.resolve("jiti", {
-  paths: [path.join(root, "node_modules", "@earendil-works", "pi-coding-agent")],
-}));
+const { createJiti } = require(
+  require.resolve("jiti", {
+    paths: [path.join(root, "node_modules", "@earendil-works", "pi-coding-agent")],
+  }),
+);
 const source = fs.readFileSync(path.join(root, "spec.yaml"), "utf8");
 const dockerfile = fs.readFileSync(path.join(root, "Dockerfile"), "utf8");
 const packageMetadata = require(path.join(root, "package.json"));
@@ -52,7 +54,9 @@ test("reports detailed usage after each interactive LLM turn", () => {
   let turnEnd;
   extension({
     on(event, handler) {
-      if (event === "turn_end") turnEnd = handler;
+      if (event === "turn_end") {
+        turnEnd = handler;
+      }
     },
   });
   assert.equal(typeof turnEnd, "function");
@@ -80,10 +84,13 @@ test("reports detailed usage after each interactive LLM turn", () => {
     ui: { notify: (message, type) => notifications.push({ message, type }) },
   });
 
-  assert.deepEqual(notifications, [{
-    message: "tokens · prompt 38,247 (new 2,100, cached 36,147) · output 1,402 (reasoning 920) · total 39,649",
-    type: "info",
-  }]);
+  assert.deepEqual(notifications, [
+    {
+      message:
+        "tokens · prompt 38,247 (new 2,100, cached 36,147) · output 1,402 (reasoning 920) · total 39,649",
+      type: "info",
+    },
+  ]);
 });
 
 test("adds only concise, environment-specific agent instructions", () => {
@@ -94,10 +101,7 @@ test("adds only concise, environment-specific agent instructions", () => {
 });
 
 test("keeps the network allowlist minimal and explicit", () => {
-  assert.deepEqual(spec.permissions.network.allow, [
-    "auth.openai.com",
-    "chatgpt.com",
-  ]);
+  assert.deepEqual(spec.permissions.network.allow, ["auth.openai.com", "chatgpt.com"]);
 });
 
 test("keeps the OAuth binding and protected credential file intact", () => {
@@ -167,23 +171,32 @@ test("imports a Codex CLI OAuth credential into Pi's auth format", () => {
   const sourcePath = path.join(temporary, "codex-auth.json");
   const targetPath = path.join(temporary, "pi", "auth.json");
   const expires = 1_800_000_000;
-  const payload = Buffer.from(JSON.stringify({
-    exp: expires,
-    "https://api.openai.com/auth": { chatgpt_account_id: "account-from-claim" },
-  })).toString("base64url");
+  const payload = Buffer.from(
+    JSON.stringify({
+      exp: expires,
+      "https://api.openai.com/auth": { chatgpt_account_id: "account-from-claim" },
+    }),
+  ).toString("base64url");
   const access = `header.${payload}.signature`;
 
-  fs.writeFileSync(sourcePath, JSON.stringify({
-    tokens: {
-      access_token: access,
-      refresh_token: "refresh-token",
-      account_id: "account-from-file",
-    },
-  }), { mode: 0o600 });
+  fs.writeFileSync(
+    sourcePath,
+    JSON.stringify({
+      tokens: {
+        access_token: access,
+        refresh_token: "refresh-token",
+        account_id: "account-from-file",
+      },
+    }),
+    { mode: 0o600 },
+  );
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  fs.writeFileSync(targetPath, JSON.stringify({
-    anthropic: { type: "api_key", key: "existing-key" },
-  }));
+  fs.writeFileSync(
+    targetPath,
+    JSON.stringify({
+      anthropic: { type: "api_key", key: "existing-key" },
+    }),
+  );
 
   try {
     const result = spawnSync(
@@ -221,7 +234,9 @@ test("host launcher stages Codex credentials only while creating a sandbox", () 
   fs.mkdirSync(home);
   fs.mkdirSync(bin);
   fs.mkdirSync(codexDir);
-  fs.writeFileSync(codexAuth, '{"tokens":{"access_token":"a","refresh_token":"r"}}\n', { mode: 0o600 });
+  fs.writeFileSync(codexAuth, '{"tokens":{"access_token":"a","refresh_token":"r"}}\n', {
+    mode: 0o600,
+  });
 
   const hash = spawnSync("git", ["hash-object", "--stdin"], {
     input: workspace,
@@ -256,22 +271,35 @@ test("host launcher stages Codex credentials only while creating a sandbox", () 
     });
     assert.equal(result.status, 0, result.stderr);
 
-    const calls = fs.readFileSync(log, "utf8")
+    const calls = fs
+      .readFileSync(log, "utf8")
       .split("<call>\n")
       .slice(1)
       .map((call) => call.slice(0, call.indexOf("</call>\n")).trimEnd().split("\n"));
     assert.deepEqual(calls, [
       ["ls", "-q"],
       [
-        "run", "--name", sandboxName,
-        "--kit", root,
-        "pi-openai-codex", workspace, sessionDir, importDir,
-        "--", "--session-dir", sessionDir,
-        "--sbx-pi-import-codex-auth", importFile,
+        "run",
+        "--name",
+        sandboxName,
+        "--kit",
+        root,
+        "pi-openai-codex",
+        workspace,
+        sessionDir,
+        importDir,
+        "--",
+        "--session-dir",
+        sessionDir,
+        "--sbx-pi-import-codex-auth",
+        importFile,
       ],
     ]);
     assert.equal(fs.existsSync(importFile), false);
-    assert.equal(fs.readFileSync(codexAuth, "utf8"), '{"tokens":{"access_token":"a","refresh_token":"r"}}\n');
+    assert.equal(
+      fs.readFileSync(codexAuth, "utf8"),
+      '{"tokens":{"access_token":"a","refresh_token":"r"}}\n',
+    );
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }
@@ -317,7 +345,8 @@ test("host launcher automatically attaches to the current workspace sandbox", ()
     });
     assert.equal(result.status, 0, result.stderr);
 
-    const calls = fs.readFileSync(log, "utf8")
+    const calls = fs
+      .readFileSync(log, "utf8")
       .split("<call>\n")
       .slice(1)
       .map((call) => call.slice(0, call.indexOf("</call>\n")).trimEnd().split("\n"));
@@ -353,7 +382,7 @@ test("host launcher enables notifications without adding private Pi arguments", 
 
   fs.writeFileSync(
     path.join(bin, "notify-send"),
-    "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" > \"$NOTIFY_LOG\"\n",
+    '#!/usr/bin/env bash\nprintf \'%s\\n\' "$@" > "$NOTIFY_LOG"\n',
     { mode: 0o755 },
   );
   fs.writeFileSync(
@@ -379,16 +408,15 @@ test("host launcher enables notifications without adding private Pi arguments", 
     });
     assert.equal(result.status, 0, result.stderr);
 
-    const calls = fs.readFileSync(log, "utf8")
+    const calls = fs
+      .readFileSync(log, "utf8")
       .split("<call>\n")
       .slice(1)
       .map((call) => call.slice(0, call.indexOf("</call>\n")).trimEnd().split("\n"));
     assert.equal(calls.length, 2);
     assert.deepEqual(calls[0], ["ls", "-q"]);
 
-    assert.deepEqual(calls[1], [
-      "run", "--name", sandboxName, "--", "--session-dir", sessionDir,
-    ]);
+    assert.deepEqual(calls[1], ["run", "--name", sandboxName, "--", "--session-dir", sessionDir]);
     assert.deepEqual(fs.readFileSync(notifyLog, "utf8").trimEnd().split("\n"), [
       "--app-name=Pi",
       "--",
@@ -417,7 +445,11 @@ test("host launcher recreates the current workspace sandbox with selected mixins
   });
   assert.equal(hash.status, 0, hash.stderr);
   const sandboxName = `pi-openai-codex-project-${hash.stdout.trim().slice(0, 12)}`;
-  const sessionDir = path.join(home, "pi-sessions-backup", `project-${hash.stdout.trim().slice(0, 12)}`);
+  const sessionDir = path.join(
+    home,
+    "pi-sessions-backup",
+    `project-${hash.stdout.trim().slice(0, 12)}`,
+  );
 
   const mockSbx = path.join(bin, "sbx");
   fs.writeFileSync(
@@ -427,26 +459,33 @@ test("host launcher recreates the current workspace sandbox with selected mixins
   );
 
   try {
-    const update = spawnSync(path.join(root, "scripts", "run"), [
-      "--update",
-      "--kit", "docker.io/acme/java-kit:1.1",
-      "--kit", "./sandbox-kits/project-tools",
-      "--continue",
-    ], {
-      cwd: workspace,
-      env: {
-        ...process.env,
-        HOME: home,
-        PATH: `${bin}:${process.env.PATH}`,
-        SBX_LIST: sandboxName,
-        SBX_LOG: log,
-        SBX_PI_NOTIFICATIONS: "off",
+    const update = spawnSync(
+      path.join(root, "scripts", "run"),
+      [
+        "--update",
+        "--kit",
+        "docker.io/acme/java-kit:1.1",
+        "--kit",
+        "./sandbox-kits/project-tools",
+        "--continue",
+      ],
+      {
+        cwd: workspace,
+        env: {
+          ...process.env,
+          HOME: home,
+          PATH: `${bin}:${process.env.PATH}`,
+          SBX_LIST: sandboxName,
+          SBX_LOG: log,
+          SBX_PI_NOTIFICATIONS: "off",
+        },
+        encoding: "utf8",
       },
-      encoding: "utf8",
-    });
+    );
     assert.equal(update.status, 0, update.stderr);
 
-    const calls = fs.readFileSync(log, "utf8")
+    const calls = fs
+      .readFileSync(log, "utf8")
       .split("<call>\n")
       .slice(1)
       .map((call) => call.slice(0, call.indexOf("</call>\n")).trimEnd().split("\n"));
@@ -454,12 +493,22 @@ test("host launcher recreates the current workspace sandbox with selected mixins
       ["ls", "-q"],
       ["rm", "-f", sandboxName],
       [
-        "run", "--name", sandboxName,
-        "--kit", root,
-        "--kit", "docker.io/acme/java-kit:1.1",
-        "--kit", "./sandbox-kits/project-tools",
-        "pi-openai-codex", workspace, sessionDir,
-        "--", "--session-dir", sessionDir, "--continue",
+        "run",
+        "--name",
+        sandboxName,
+        "--kit",
+        root,
+        "--kit",
+        "docker.io/acme/java-kit:1.1",
+        "--kit",
+        "./sandbox-kits/project-tools",
+        "pi-openai-codex",
+        workspace,
+        sessionDir,
+        "--",
+        "--session-dir",
+        sessionDir,
+        "--continue",
       ],
     ]);
   } finally {
@@ -491,20 +540,22 @@ test("host launcher requires recreation before applying mixins to an existing sa
   );
 
   try {
-    const result = spawnSync(path.join(root, "scripts", "run"), [
-      "--kit", "docker.io/acme/java-kit:1.1",
-    ], {
-      cwd: workspace,
-      env: {
-        ...process.env,
-        HOME: home,
-        PATH: `${bin}:${process.env.PATH}`,
-        SBX_LIST: sandboxName,
-        SBX_LOG: log,
-        SBX_PI_NOTIFICATIONS: "off",
+    const result = spawnSync(
+      path.join(root, "scripts", "run"),
+      ["--kit", "docker.io/acme/java-kit:1.1"],
+      {
+        cwd: workspace,
+        env: {
+          ...process.env,
+          HOME: home,
+          PATH: `${bin}:${process.env.PATH}`,
+          SBX_LIST: sandboxName,
+          SBX_LOG: log,
+          SBX_PI_NOTIFICATIONS: "off",
+        },
+        encoding: "utf8",
       },
-      encoding: "utf8",
-    });
+    );
 
     assert.equal(result.status, 2);
     assert.match(result.stderr, /use --update to change its kits/);

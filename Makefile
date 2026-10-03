@@ -24,6 +24,7 @@ publish: image ## Build, verify, and push the versioned image
 	docker push "$(IMAGE)"
 
 install: ## Install a global user command at $(BINDIR)/$(COMMAND)
+	@node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 19)) process.exit(1); require("smol-toml")' >/dev/null 2>&1 || { printf 'Install Node.js 22.19+ and run npm ci --omit=dev --ignore-scripts before make install\n' >&2; exit 1; }
 	@mkdir -p "$(BINDIR)"
 	@ln -sfn "$(CURDIR)/scripts/run" "$(BINDIR)/$(COMMAND)"
 	@printf 'Installed %s -> %s\n' "$(BINDIR)/$(COMMAND)" "$(CURDIR)/scripts/run"
