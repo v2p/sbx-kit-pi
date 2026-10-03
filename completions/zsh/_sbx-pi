@@ -1,0 +1,13 @@
+# Zsh completion body, wrapped and registered by completion-init.mjs.
+
+local -a response
+local kind
+response=("${(@f)$("${words[1]}" _complete "${(@)words[2,CURRENT]}" 2>/dev/null)}")
+kind=${response[1]:-words}
+if [[ $kind == files ]]; then
+  _files
+else
+  response=("${(@)response[2,-1]}")
+  (( ${#response} )) && compadd -Q -- "${response[@]}"
+fi
+return 0

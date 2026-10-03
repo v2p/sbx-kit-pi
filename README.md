@@ -316,6 +316,42 @@ shell's `PATH`. This remains a per-user, checkout-backed installation: keep
 Node.js, this checkout, and its runtime dependencies available. No sudo or
 shell configuration changes are required by the installer.
 
+### Optional Bash and Zsh completion
+
+To enable completion, add this to your interactive `~/.bashrc` (Bash 4+):
+
+```bash
+eval "$(sbx-pi completion bash)"
+```
+
+Or add this to `~/.zshrc`, **after** `compinit` or your shell framework has
+initialized Zsh completion:
+
+```zsh
+eval "$(sbx-pi completion zsh)"
+```
+
+If nothing already initializes Zsh completion, put `autoload -Uz compinit` and
+`compinit` before the `eval` line. Do not duplicate a framework's initialization.
+`completion bash|zsh` only prints integration code: it does not install files,
+initialize `compinit`, or change configuration. Repeated evaluation is safe.
+Use your installed command name in place of `sbx-pi` if you customized `COMMAND`;
+registration automatically uses that name. Keep the command in `PATH` and retain
+the checkout and its Node.js runtime dependencies.
+
+No separate completion-file installation is required. Restart the interactive
+shell after setup.
+
+Completion suggests subcommands, context-appropriate launcher flags, global
+`@kit_aliases` after `--kit`, and file paths for `--config` and local kits. It
+stops at Pi passthrough arguments (including `--`) rather than guessing Pi flags.
+It is read-only: no Docker, Git, network, workspace discovery, or state writes.
+Missing or malformed personal configuration simply yields no alias suggestions.
+
+To disable completion, remove the `eval` line from your shell startup file and
+restart the shell. **Never load completion scripts from
+`/etc/sandbox-persistent.sh`**; use interactive shell configuration only.
+
 ## Docker Sandbox instruction preprocessing
 
 The custom sandbox image installs Pi and copies this kit's extension into

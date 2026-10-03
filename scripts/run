@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Completion must bypass workspace discovery and all launch-time side effects.
+if [[ ${1:-} == completion || ${1:-} == _complete ]]; then
+  launcher=$(readlink -f "${BASH_SOURCE[0]}")
+  kit_dir=$(cd "$(dirname "$launcher")/.." && pwd -P)
+  command=$1
+  shift
+  if [[ $command == completion ]]; then
+    exec node "$kit_dir/scripts/completion-init.mjs" "${0##*/}" "$@"
+  fi
+  exec node "$kit_dir/scripts/launcher-completion.mjs" "$@"
+fi
+
 update_existing=0
 import_codex_auth=0
 additional_kits=()
