@@ -9,7 +9,7 @@ function aliases() {
     const file = path.join(
       process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"),
       "sbx-pi",
-      "config.toml",
+      "global.toml",
     );
     const config = parse(fs.readFileSync(file, "utf8"));
     const table = config.kit_aliases;

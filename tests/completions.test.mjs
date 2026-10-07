@@ -42,7 +42,7 @@ function fixture(t) {
     );
   }
   fs.writeFileSync(path.join(workspace, "sbx-pi.toml"), "invalid project TOML");
-  const global = path.join(configHome, "sbx-pi", "config.toml");
+  const global = path.join(configHome, "sbx-pi", "global.toml");
   fs.writeFileSync(
     global,
     'schema_version = 1\n[kit_aliases]\nnode = "docker.io/acme/node:1"\nnode_tools = "./tools"\n',
@@ -53,7 +53,7 @@ function fixture(t) {
     HOME: home,
     XDG_CONFIG_HOME: configHome,
     XDG_STATE_HOME: path.join(dir, "state"),
-    SBX_PI_NOTIFICATIONS: "invalid",
+    SBX_PI_HOST_RPC_ALLOW: "invalid",
     MOCK_LOG: path.join(dir, "log"),
   };
   const execute = (command, args) =>

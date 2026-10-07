@@ -129,7 +129,7 @@ sandboxOptions:
 
 The example includes optional settings to add after initialization. `init` never
 overwrites an existing YAML file, inherits a parent configuration, or persists
-personal notification settings. Local kit paths must remain inside the project
+global host RPC policy. Local kit paths must remain inside the project
 for a portable generated file. The `acme` references are placeholders; choose
 real reviewed kits. A local example is in
 [`examples/mixins/project-bootstrap/`](examples/mixins/project-bootstrap/).
@@ -166,7 +166,6 @@ Optional **`sbx-pi.toml`** holds settings not covered by `sbx env`:
 
 ```toml
 schema_version = 1
-notifications = "auto"
 
 [network]
 allow = ["registry.npmjs.org", "api.github.com"]
@@ -186,14 +185,14 @@ move `kits` into YAML and remove the TOML key; CLI kit overrides are rejected to
 avoid two sources of truth. `init --kit` remains the convenient way to generate
 YAML, including expansion of personal aliases. See [configuration details](docs/configuration.md).
 
-### Personal aliases and notifications
+### Global configuration
 
-Optional defaults live at `~/.config/sbx-pi/config.toml` (or
-`$XDG_CONFIG_HOME/sbx-pi/config.toml`):
+Optional defaults live at `~/.config/sbx-pi/global.toml` (or
+`$XDG_CONFIG_HOME/sbx-pi/global.toml`). Keep this file outside sandbox-writable
+mounts:
 
 ```toml
 schema_version = 1
-notifications = "auto"
 
 [kit_aliases]
 node = "docker.io/acme/node-kit:1.2.0"
@@ -212,20 +211,41 @@ for sharing; native YAML does not interpret `@aliases`. Alias writes preserve
 settings but reformat TOML and remove comments.
 See [configuration details](docs/configuration.md) for path and write behavior.
 
-Desktop notifications are enabled automatically when host `notify-send` is
-available (`libnotify-bin` or `libnotify` on most distributions). A notification
-arrives when an agent job has fully settled, including retries and queued work.
-Failures never interrupt Pi.
+### Sandbox-to-host requests
 
-Disable them for a launch with:
+Notifications now use a versioned, allowlisted JSON-RPC file queue. The bridge
+also records domains submitted through Pi's `host_network_request` tool and
+metadata about observed Pi `read` calls in a private host-side log. Network
+requests do **not** grant access; read telemetry is **not** a tamper-proof or
+system-wide security audit. No file contents are logged and no port is opened.
 
-```console
-SBX_PI_NOTIFICATIONS=off sbx-pi
+Set persistent host permissions in global TOML (not project TOML):
+
+```toml
+[host_rpc]
+allow = ["notification.send", "network.request", "file.access"]
 ```
 
-Or set `notifications = "off"` in personal or project TOML. Precedence is the
-environment variable, project config, personal config, then `auto`. Values are
-`auto`, `on` (require `notify-send`), or `off`.
+An empty array disables the bridge. Override global defaults for one launch
+using host-only environment settings (for example, `off` for untrusted sources):
+
+```console
+SBX_PI_HOST_RPC_ALLOW=notification.send,network.request sbx-pi
+SBX_PI_HOST_RPC_ALLOW=off sbx-pi
+```
+
+By default, all three built-in handlers are allowed. Desktop notifications work
+when `notification.send` is allowed and host `notify-send` is available
+(`libnotify-bin` or `libnotify` on most distributions). They arrive when an agent
+job has fully settled, including retries and queued work; failures never
+interrupt Pi. To disable only notifications, omit `notification.send`:
+
+```console
+SBX_PI_HOST_RPC_ALLOW=network.request,file.access sbx-pi
+```
+
+See [Host RPC](docs/host-rpc.md) for the protocol, log location, review commands,
+and limitations.
 
 ### Inspect configuration
 

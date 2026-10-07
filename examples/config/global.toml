@@ -1,6 +1,10 @@
-# Copy to ~/.config/sbx-pi/config.toml (or $XDG_CONFIG_HOME/sbx-pi/config.toml).
+# Copy to ~/.config/sbx-pi/global.toml (or $XDG_CONFIG_HOME/sbx-pi/global.toml).
+# Keep this host policy outside sandbox-writable mounts.
 schema_version = 1
-notifications = "auto"
+
+# Empty allow disables the bridge; the environment variable overrides this list.
+[host_rpc]
+allow = ["notification.send", "network.request", "file.access"]
 
 # Illustrative references: replace these with kits you trust and can pull.
 [kit_aliases]

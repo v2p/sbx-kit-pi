@@ -37,7 +37,7 @@ test("uses tier-agnostic OpenAI Codex naming and provider configuration", () => 
     "--extension",
     "/opt/sbx-kit-pi/extensions/agents-postprocessor.ts",
     "--extension",
-    "/opt/sbx-kit-pi/extensions/linux-notifications.ts",
+    "/opt/sbx-kit-pi/extensions/host-rpc.ts",
     "--extension",
     "/opt/sbx-kit-pi/extensions/token-usage.ts",
   ]);
@@ -277,7 +277,7 @@ test("host launcher stages Codex credentials only while creating a sandbox", () 
         PATH: `${bin}:${process.env.PATH}`,
         CODEX_AUTH: codexAuth,
         SBX_LOG: log,
-        SBX_PI_NOTIFICATIONS: "off",
+        SBX_PI_HOST_RPC_ALLOW: "off",
       },
       encoding: "utf8",
     });
@@ -351,7 +351,7 @@ test("host launcher automatically attaches to the current workspace sandbox", ()
         PATH: `${bin}:${process.env.PATH}`,
         SBX_LIST: sandboxName,
         SBX_LOG: log,
-        SBX_PI_NOTIFICATIONS: "off",
+        SBX_PI_HOST_RPC_ALLOW: "off",
       },
       encoding: "utf8",
     });
@@ -390,7 +390,7 @@ test("host launcher enables notifications without adding private Pi arguments", 
   const suffix = hash.stdout.trim().slice(0, 12);
   const sandboxName = `pi-openai-codex-project-${suffix}`;
   const sessionDir = path.join(home, "pi-sessions-backup", `project-${suffix}`);
-  const notificationFile = path.join(sessionDir, ".notifications.queue");
+  const notificationFile = path.join(sessionDir, ".host-rpc.requests.jsonl");
 
   fs.writeFileSync(
     path.join(bin, "notify-send"),
@@ -399,7 +399,7 @@ test("host launcher enables notifications without adding private Pi arguments", 
   );
   fs.writeFileSync(
     path.join(bin, "sbx"),
-    `#!/usr/bin/env bash\nprintf '<call>\\n' >> "$SBX_LOG"\nprintf '%s\\n' "$@" >> "$SBX_LOG"\nprintf '</call>\\n' >> "$SBX_LOG"\nif [[ $1 == ls ]]; then\n  printf '%s\\n' "$SBX_LIST"\nelif [[ $1 == run ]]; then\n  [[ -f $NOTIFICATION_FILE ]] || exit 3\n  printf '%s\\t%s\\n' 'Pi finished · project' "$SBX_LIST" >> "$NOTIFICATION_FILE"\nfi\n`,
+    `#!/usr/bin/env bash\nprintf '<call>\\n' >> "$SBX_LOG"\nprintf '%s\\n' "$@" >> "$SBX_LOG"\nprintf '</call>\\n' >> "$SBX_LOG"\nif [[ $1 == ls ]]; then\n  printf '%s\\n' "$SBX_LIST"\nelif [[ $1 == run ]]; then\n  [[ -f $NOTIFICATION_FILE ]] || exit 3\n  printf '{"jsonrpc":"2.0","sbxVersion":1,"id":"notify-1","session":"session.jsonl","method":"notification.send","params":{"title":"Pi finished · project","body":"%s"}}\\n' "$SBX_LIST" >> "$NOTIFICATION_FILE"\nfi\n`,
     { mode: 0o755 },
   );
 
@@ -412,7 +412,7 @@ test("host launcher enables notifications without adding private Pi arguments", 
         PATH: `${bin}:${process.env.PATH}`,
         SBX_LIST: sandboxName,
         SBX_LOG: log,
-        SBX_PI_NOTIFICATIONS: "on",
+        SBX_PI_HOST_RPC_ALLOW: "notification.send",
         NOTIFICATION_FILE: notificationFile,
         NOTIFY_LOG: notifyLog,
       },
@@ -489,7 +489,7 @@ test("host launcher recreates the current workspace sandbox with selected mixins
           PATH: `${bin}:${process.env.PATH}`,
           SBX_LIST: sandboxName,
           SBX_LOG: log,
-          SBX_PI_NOTIFICATIONS: "off",
+          SBX_PI_HOST_RPC_ALLOW: "off",
         },
         encoding: "utf8",
       },
@@ -563,7 +563,7 @@ test("host launcher requires recreation before applying mixins to an existing sa
           PATH: `${bin}:${process.env.PATH}`,
           SBX_LIST: sandboxName,
           SBX_LOG: log,
-          SBX_PI_NOTIFICATIONS: "off",
+          SBX_PI_HOST_RPC_ALLOW: "off",
         },
         encoding: "utf8",
       },

@@ -5,7 +5,7 @@ displayName: Pi (OpenAI Codex)
 description: Pi coding agent configured for OpenAI Codex OAuth
 
 sandbox:
-  image: docker.io/vposvistelik/sbx-kit-pi:0.4.0
+  image: docker.io/vposvistelik/sbx-kit-pi:0.5.0
   entrypoint:
     - /opt/sbx-kit-pi/scripts/container-entrypoint
     - --provider
@@ -15,7 +15,7 @@ sandbox:
     - --extension
     - /opt/sbx-kit-pi/extensions/agents-postprocessor.ts
     - --extension
-    - /opt/sbx-kit-pi/extensions/linux-notifications.ts
+    - /opt/sbx-kit-pi/extensions/host-rpc.ts
     - --extension
     - /opt/sbx-kit-pi/extensions/token-usage.ts
 

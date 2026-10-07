@@ -65,36 +65,8 @@ config_file=
 protocol_file=
 config_command=resolve
 import_file=
-notification_file=
-notification_listener_pid=
-
-notification_listener() {
-  set +e
-  local queue_file=$1
-
-  exec 3< "$queue_file" || return
-
-  process_notifications() {
-    local title body
-    while IFS=$'\t' read -r title body <&3; do
-      notify-send --app-name=Pi -- \
-        "${title:-Pi finished}" "${body:-Ready for input}" >/dev/null 2>&1 || true
-    done
-  }
-
-  running=1
-  trap 'running=0' INT TERM HUP
-
-  while (( running )); do
-    process_notifications
-    sleep 0.2 &
-    wait $! 2>/dev/null || true
-  done
-
-  # Drain events written just before the attached Pi process exited.
-  process_notifications
-  exec 3<&-
-}
+rpc_listener_pid=
+rpc_ready_dir=
 
 cleanup_host_state() {
   if [[ -n $config_file ]]; then
@@ -106,12 +78,12 @@ cleanup_host_state() {
   if [[ -n $import_file ]]; then
     rm -f -- "$import_file"
   fi
-  if [[ -n $notification_listener_pid ]]; then
-    kill "$notification_listener_pid" 2>/dev/null || true
-    wait "$notification_listener_pid" 2>/dev/null || true
+  if [[ -n $rpc_listener_pid ]]; then
+    kill "$rpc_listener_pid" 2>/dev/null || true
+    wait "$rpc_listener_pid" 2>/dev/null || true
   fi
-  if [[ -n $notification_file ]]; then
-    rm -f -- "$notification_file"
+  if [[ -n $rpc_ready_dir ]]; then
+    rm -rf -- "$rpc_ready_dir"
   fi
 }
 trap cleanup_host_state EXIT
@@ -231,10 +203,10 @@ protocol_file=$(mktemp)
 node "$kit_dir/scripts/launcher-config.mjs" fields "$config_file" > "$protocol_file"
 mapfile -d '' -t resolved < "$protocol_file"
 workspace=${resolved[0]}
-notifications=${resolved[1]}
-sandbox_name=${resolved[2]}
-project_file=${resolved[3]}
-environment_mode=${resolved[4]}
+sandbox_name=${resolved[1]}
+project_file=${resolved[2]}
+environment_mode=${resolved[3]}
+host_rpc_allow=${resolved[4]}
 additional_kits=("${resolved[@]:5}")
 project_name=$(basename "$workspace")
 workspace_hash=$(printf '%s' "$workspace" | git hash-object --stdin)
@@ -260,15 +232,29 @@ pi_args=(
   "$@"
 )
 
-if [[ $notifications != off ]]; then
-  if command -v notify-send >/dev/null 2>&1; then
-    notification_file="$session_dir/.notifications.queue"
-    rm -f -- "$notification_file"
-    (umask 077; : > "$notification_file")
-    notification_listener "$notification_file" &
-    notification_listener_pid=$!
-  elif [[ $notifications == on ]]; then
-    printf '%s\n' 'SBX_PI_NOTIFICATIONS is enabled, but notify-send is not installed on the host' >&2
+rpc_notification_available=off
+if command -v notify-send >/dev/null 2>&1; then
+  rpc_notification_available=on
+fi
+
+if [[ $host_rpc_allow != off ]]; then
+  rpc_ready_dir=$(mktemp -d)
+  rpc_log="${XDG_STATE_HOME:-$HOME/.local/state}/sbx-pi/host-rpc/${workspace_hash}.jsonl"
+  SBX_PI_HOST_RPC_ALLOW="$host_rpc_allow" node "$kit_dir/scripts/host-rpc-listener.mjs" \
+    "$session_dir" "$rpc_log" "$sandbox_name" "$workspace" \
+    "$rpc_notification_available" "$rpc_ready_dir/ready" &
+  rpc_listener_pid=$!
+  for (( attempt=0; attempt<100; attempt++ )); do
+    if [[ -f $rpc_ready_dir/ready ]]; then break; fi
+    if ! kill -0 "$rpc_listener_pid" 2>/dev/null; then
+      wait "$rpc_listener_pid" || true
+      printf '%s\n' 'Host RPC listener failed to start (another launcher or stale queue may exist)' >&2
+      exit 2
+    fi
+    sleep 0.05
+  done
+  if [[ ! -f $rpc_ready_dir/ready ]]; then
+    printf '%s\n' 'Host RPC listener did not become ready' >&2
     exit 2
   fi
 fi

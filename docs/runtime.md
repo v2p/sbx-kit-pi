@@ -15,11 +15,15 @@ context or persisted sessions.
 
 ## Desktop notifications
 
-The bundled `linux-notifications.ts` extension appends completion events to a
-private queue file in the mounted session directory. A listener in `scripts/run`
-consumes that queue and calls host `notify-send`. No network port is opened.
-The queue exists only while the listener is active, so unattended sandbox jobs
-do not accumulate notifications.
+The bundled `host-rpc.ts` extension queues a `notification.send` JSON-RPC call
+in the mounted session directory. `scripts/run` starts a host listener that
+validates and dispatches explicitly allowed methods, then writes a correlated
+response. The notification handler calls host `notify-send` without a shell.
+No network port is opened, and queues exist only while the listener is active.
+
+The same bridge records network review requests and observed Pi read attempts.
+See [Host RPC](host-rpc.md) for the wire format, host allowlist, review commands,
+limits, and important telemetry/security limitations.
 
 The title contains the project name; the body contains the sandbox name and,
 when set with `/name`, the Pi session name. Runtime context supplies project,

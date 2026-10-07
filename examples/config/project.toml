@@ -1,6 +1,5 @@
 # Optional sbx-pi.toml beside sbxenv.yaml: only settings missing from sbx env.
 schema_version = 1
-notifications = "auto"
 
 # Supplemental permissions for this sandbox; changes require --recreate.
 # Docker deny rules and organization policy still take precedence.

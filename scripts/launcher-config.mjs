@@ -14,6 +14,9 @@ import {
   writeNetworkKit,
 } from "./launcher-environment.mjs";
 
+import { METHODS } from "./host-rpc-protocol.mjs";
+import { allowedMethods } from "./host-rpc-listener.mjs";
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const home = os.homedir();
@@ -35,8 +38,8 @@ function load(file, global = false) {
     throw new Error(`${file}: ${error.message}`, { cause: error });
   }
   const allowed = global
-    ? ["schema_version", "notifications", "kit_aliases"]
-    : ["schema_version", "notifications", "kits", "network"];
+    ? ["schema_version", "kit_aliases", "host_rpc"]
+    : ["schema_version", "kits", "network"];
   for (const key of Object.keys(config)) {
     if (!allowed.includes(key)) {
       throw new Error(`${file}: unknown setting ${key}`);
@@ -45,8 +48,18 @@ function load(file, global = false) {
   if (config.schema_version !== 1) {
     throw new Error(`${file}: schema_version must be 1`);
   }
-  if (config.notifications !== undefined && !["auto", "on", "off"].includes(config.notifications)) {
-    throw new Error(`${file}: notifications must be auto, on, or off`);
+  if (config.host_rpc !== undefined) {
+    const rpc = config.host_rpc;
+    if (
+      !rpc ||
+      typeof rpc !== "object" ||
+      Array.isArray(rpc) ||
+      Object.keys(rpc).some((key) => key !== "allow") ||
+      !Array.isArray(rpc.allow) ||
+      rpc.allow.some((method) => !Object.values(METHODS).includes(method))
+    ) {
+      throw new Error(`${file}: host_rpc must contain only an allow array of built-in methods`);
+    }
   }
   if (config.network !== undefined) {
     if (
@@ -91,7 +104,7 @@ function globalConfigFile() {
   return path.join(
     process.env.XDG_CONFIG_HOME || path.join(home, ".config"),
     "sbx-pi",
-    "config.toml",
+    "global.toml",
   );
 }
 
@@ -292,22 +305,8 @@ function resolve(args, initialize = false) {
     }
     return resolveReference(ref, workspace);
   });
-  let notifications =
-    process.env.SBX_PI_NOTIFICATIONS ?? project.notifications ?? global.notifications ?? "auto";
-  notifications = String(notifications).toLowerCase();
-  const notificationValues = new Map([
-    ["1", "on"],
-    ["true", "on"],
-    ["on", "on"],
-    ["0", "off"],
-    ["false", "off"],
-    ["off", "off"],
-    ["auto", "auto"],
-  ]);
-  notifications = notificationValues.get(notifications);
-  if (!notifications) {
-    throw new Error("Invalid SBX_PI_NOTIFICATIONS value (expected auto, on, or off)");
-  }
+  const hostRpcValue = process.env.SBX_PI_HOST_RPC_ALLOW ?? global.host_rpc?.allow.join(",");
+  const hostRpcAllow = [...allowedMethods(hostRpcValue, true)].join(",") || "off";
   const suffix = execFileSync("git", ["hash-object", "--stdin"], {
     input: workspace,
     encoding: "utf8",
@@ -342,7 +341,7 @@ function resolve(args, initialize = false) {
     nativeArguments,
     networkAllow,
     baseKitDirectory: root,
-    notifications,
+    hostRpcAllow,
     sandboxName,
     baseKitVersion: JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version,
     baseKitFingerprint,
@@ -402,10 +401,10 @@ try {
       process.stdout.write(
         [
           config.workspace,
-          config.notifications,
           config.sandboxName,
           config.projectFile ?? "",
           config.environmentFiles.length ? "native" : "legacy",
+          config.hostRpcAllow,
           ...config.kits,
         ].join("\0") + "\0",
       );
