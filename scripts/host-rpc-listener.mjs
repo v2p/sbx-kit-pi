@@ -1,7 +1,5 @@
 import { constants } from "node:fs";
-import { mkdir, open, unlink, writeFile } from "node:fs/promises";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { mkdir, open, readFile, unlink, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -16,8 +14,9 @@ import {
   validParams,
 } from "./host-rpc-protocol.mjs";
 
+import { createHandlers, notificationAvailable } from "./host-rpc-handlers.mjs";
+
 const METHOD_NAMES = Object.values(METHODS);
-const execute = promisify(execFile);
 const MAX_CALLS = 10000;
 const MAX_LOG_BYTES = 16 * 1024 * 1024;
 const NOTIFICATION_BURST = 3;
@@ -38,7 +37,12 @@ export function allowedMethods(value, notificationAvailable) {
   );
 }
 
-export async function createDispatcher({ allowed, notify, record, now = () => performance.now() }) {
+export async function createDispatcher({
+  allowed,
+  handlers,
+  record,
+  now = () => performance.now(),
+}) {
   const seen = new Set();
   let notificationTokens = NOTIFICATION_BURST;
   let notificationUpdatedAt = now();
@@ -90,14 +94,8 @@ export async function createDispatcher({ allowed, notify, record, now = () => pe
         // Record before any host side effect; a failed/full log fails closed.
         await record({ request, status: "accepted" });
         try {
-          if (method === METHODS.NOTIFICATION_SEND) {
-            await notify(params.title, params.body);
-          }
-          response = {
-            jsonrpc: "2.0",
-            id,
-            result: { status: method === METHODS.NOTIFICATION_SEND ? "performed" : "recorded" },
-          };
+          const result = await handlers[method](request);
+          response = { jsonrpc: "2.0", id, result };
         } catch {
           response = failure(id, -32603, "Host handler failed");
         }
@@ -117,7 +115,7 @@ export async function listen({
   allowed,
   readyFile,
   shouldStop,
-  notify,
+  handlers,
 }) {
   const paths = [join(sessionDir, REQUEST_FILE), join(sessionDir, RESPONSE_FILE)];
   const handles = [];
@@ -174,7 +172,7 @@ export async function listen({
       }
       await log.writeFile(line);
     };
-    const dispatch = await createDispatcher({ allowed, record, notify });
+    const dispatch = await createDispatcher({ allowed, record, handlers });
     const decoder = new Records();
     const buffer = Buffer.alloc(16384);
     let position = 0;
@@ -236,28 +234,22 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       stopping = true;
     });
   }
-  const [sessionDir, logFile, sandbox, workspace, notificationAvailable, readyFile] =
-    process.argv.slice(2);
+  const [sessionDir, logFile, sandbox, workspace, readyFile, configFile] = process.argv.slice(2);
   try {
+    const config = JSON.parse(await readFile(configFile, "utf8"));
+    const commands = config.hostRpcHandlers;
     await listen({
       sessionDir,
       logFile,
       sandbox,
       workspace,
       readyFile,
-      allowed: allowedMethods(process.env.SBX_PI_HOST_RPC_ALLOW, notificationAvailable === "on"),
+      allowed: allowedMethods(
+        config.hostRpcAllow,
+        notificationAvailable(commands[METHODS.NOTIFICATION_SEND]),
+      ),
       shouldStop: () => stopping,
-      notify: (title, body) =>
-        execute(
-          "notify-send",
-          [
-            "--app-name=Pi",
-            "--",
-            title,
-            body.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"),
-          ],
-          { timeout: 2000, maxBuffer: 4096 },
-        ),
+      handlers: createHandlers(commands, { cwd: config.hostRpcHandlerCwd, sandbox, workspace }),
     });
   } catch (error) {
     console.error(`sbx-pi host RPC: ${error.message}`);

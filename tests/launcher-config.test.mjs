@@ -106,6 +106,87 @@ test("host RPC policy is global-only with per-launch environment overrides", (t)
   }
 });
 
+test("host RPC commands use global defaults and resolve relative executables outside the workspace", (t) => {
+  const f = fixture(t);
+  const defaults = f.show().hostRpcHandlers;
+  assert.deepEqual(Object.keys(defaults), ["notification.send", "network.request", "file.access"]);
+  fs.writeFileSync(
+    f.global,
+    `schema_version = 1
+[host_rpc.handlers]
+"network.request" = [["default"], ["./review", "fixed argument"]]
+"notification.send" = [["node", "./notify.mjs"]]
+`,
+  );
+  const config = f.show();
+  assert.equal(config.hostRpcHandlerCwd, path.dirname(f.global));
+  assert.deepEqual(config.hostRpcHandlers["network.request"], [
+    ...defaults["network.request"],
+    [path.join(path.dirname(f.global), "review"), "fixed argument"],
+  ]);
+  assert.deepEqual(config.hostRpcHandlers["notification.send"], [["node", "./notify.mjs"]]);
+  assert.deepEqual(config.hostRpcHandlers["file.access"], defaults["file.access"]);
+  assert.equal(config.hostRpcAllow, "notification.send,network.request,file.access");
+  assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
+  assert.equal(f.run(["config", "alias", "node", "docker.io/acme/node:1"]).status, 0);
+  assert.deepEqual(f.show().hostRpcHandlers, config.hostRpcHandlers);
+  for (const table of [
+    '"shell.run" = [["default"]]',
+    '"network.request" = []',
+    '"network.request" = ["./script"]',
+    '"network.request" = [[""]]',
+    '"network.request" = [["default", "extra"]]',
+    '"network.request" = [["command\\nargument"]]',
+  ]) {
+    fs.writeFileSync(f.global, `schema_version = 1\n[host_rpc.handlers]\n${table}\n`);
+    assert.equal(f.run(["config", "show"]).status, 2, table);
+  }
+});
+
+test("launcher connects configured consumers to the queue, including shutdown drain", (t) => {
+  const f = fixture(t);
+  const script = path.join(path.dirname(f.global), "consumer.mjs");
+  const output = path.join(f.dir, "received.json");
+  fs.writeFileSync(
+    script,
+    `
+import fs from 'node:fs';
+let input = '';
+for await (const chunk of process.stdin) input += chunk;
+fs.writeFileSync(${JSON.stringify(output)}, input);
+console.log(JSON.stringify({ status: 'recorded' }));
+`,
+  );
+  fs.writeFileSync(
+    f.global,
+    `schema_version = 1
+[host_rpc]
+allow = ["network.request"]
+[host_rpc.handlers]
+"network.request" = [["node", "./consumer.mjs"]]
+`,
+  );
+  fs.writeFileSync(
+    path.join(f.dir, "bin/sbx"),
+    `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+if (process.argv[2] === 'run') {
+  const base = path.join(process.env.HOME, 'pi-sessions-backup');
+  const queue = path.join(base, fs.readdirSync(base)[0], '.host-rpc.requests.jsonl');
+  fs.appendFileSync(queue, JSON.stringify({ jsonrpc: '2.0', sbxVersion: 1, id: 'consumer-test', session: 'test.jsonl', method: 'network.request', params: { host: 'example.com', reason: 'Review' } }) + '\\n');
+}
+`,
+    { mode: 0o755 },
+  );
+  const result = f.run();
+  assert.equal(result.status, 0, result.stderr);
+  const received = JSON.parse(fs.readFileSync(output, "utf8"));
+  assert.equal(received.request.id, "consumer-test");
+  assert.equal(received.context.workspace, f.subdir);
+  assert.equal(received.context.sandbox, f.show().sandboxName);
+});
+
 test("alias writes preserve global host policy", (t) => {
   const f = fixture(t);
   fs.writeFileSync(f.global, 'schema_version = 1\n[host_rpc]\nallow = ["file.access"]\n');

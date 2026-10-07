@@ -244,8 +244,17 @@ interrupt Pi. To disable only notifications, omit `notification.send`:
 SBX_PI_HOST_RPC_ALLOW=network.request,file.access sbx-pi
 ```
 
-See [Host RPC](docs/host-rpc.md) for the protocol, log location, review commands,
-and limitations.
+Consumers can attach ordered handler scripts through host-owned global config:
+
+```toml
+[host_rpc.handlers]
+"network.request" = [["default"], ["python3", "/home/me/rpc/review.py"]]
+```
+
+Each method has a standalone reference handler, used by default. Commands receive
+validated reports as JSON on stdin and return a status as JSON on stdout.
+See [Host RPC](docs/host-rpc.md#attaching-consumer-handlers) for handler configuration,
+the protocol, log location, review commands, and limitations.
 
 ### Inspect configuration
 

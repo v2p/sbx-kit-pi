@@ -16,6 +16,7 @@ import {
 
 import { METHODS } from "./host-rpc-protocol.mjs";
 import { allowedMethods } from "./host-rpc-listener.mjs";
+import { resolveHandlers } from "./host-rpc-handlers.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -54,11 +55,17 @@ function load(file, global = false) {
       !rpc ||
       typeof rpc !== "object" ||
       Array.isArray(rpc) ||
-      Object.keys(rpc).some((key) => key !== "allow") ||
-      !Array.isArray(rpc.allow) ||
-      rpc.allow.some((method) => !Object.values(METHODS).includes(method))
+      Object.keys(rpc).some((key) => !["allow", "handlers"].includes(key)) ||
+      (rpc.allow !== undefined &&
+        (!Array.isArray(rpc.allow) ||
+          rpc.allow.some((method) => !Object.values(METHODS).includes(method))))
     ) {
-      throw new Error(`${file}: host_rpc must contain only an allow array of built-in methods`);
+      throw new Error(
+        `${file}: host_rpc must contain only an allow array and a handlers table of built-in methods`,
+      );
+    }
+    if (rpc.handlers !== undefined) {
+      resolveHandlers(rpc.handlers, path.dirname(file));
     }
   }
   if (config.network !== undefined) {
@@ -305,8 +312,10 @@ function resolve(args, initialize = false) {
     }
     return resolveReference(ref, workspace);
   });
-  const hostRpcValue = process.env.SBX_PI_HOST_RPC_ALLOW ?? global.host_rpc?.allow.join(",");
+  const hostRpcValue = process.env.SBX_PI_HOST_RPC_ALLOW ?? global.host_rpc?.allow?.join(",");
   const hostRpcAllow = [...allowedMethods(hostRpcValue, true)].join(",") || "off";
+  const hostRpcHandlerCwd = fs.existsSync(globalFile) ? path.dirname(globalFile) : home;
+  const hostRpcHandlers = resolveHandlers(global.host_rpc?.handlers, hostRpcHandlerCwd);
   const suffix = execFileSync("git", ["hash-object", "--stdin"], {
     input: workspace,
     encoding: "utf8",
@@ -342,6 +351,8 @@ function resolve(args, initialize = false) {
     networkAllow,
     baseKitDirectory: root,
     hostRpcAllow,
+    hostRpcHandlers,
+    hostRpcHandlerCwd,
     sandboxName,
     baseKitVersion: JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version,
     baseKitFingerprint,

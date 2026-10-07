@@ -77,17 +77,30 @@ Only project TOML can declare supplemental network permissions; personal config
 cannot silently inject them. Unknown TOML settings, invalid values, conflicting
 YAML/TOML kits, and unsupported TOML versions fail before Docker is invoked.
 
-## Host RPC permissions
+## Host RPC permissions and handlers
 
-Global `global.toml` accepts `[host_rpc]` with an `allow` array of built-in
-method names. An empty array disables the bridge. `SBX_PI_HOST_RPC_ALLOW` is a
+Global `global.toml` accepts `[host_rpc]` with an optional `allow` array of built-in
+method names and a `[host_rpc.handlers]` table of per-method command chains. An empty array disables the bridge. `SBX_PI_HOST_RPC_ALLOW` is a
 host-only comma-separated per-launch override; `off` or an empty value disables
 the bridge. With neither setting, all three built-in methods are permitted.
 Project TOML rejects `host_rpc` and cannot grant host RPC capabilities.
-Keep global configuration outside sandbox-writable mounts. Notifications require
-`notification.send` in the allowlist and host `notify-send` availability; omitting
-that method does not disable telemetry. See [Host RPC](host-rpc.md) for
-policy, log retention, protocol details, and auditing limitations.
+Keep global configuration and handler code outside sandbox-writable mounts.
+Each method defaults to its standalone reference script. Custom chains replace
+that method's default; include `["default"]` to retain the reference behavior:
+
+```toml
+[host_rpc.handlers]
+"network.request" = [["default"], ["python3", "/home/me/rpc/review.py"]]
+```
+
+Handlers receive validated calls as JSON on stdin and return a status as JSON on
+stdout. Handler configuration does not grant method permissions. Notifications
+require `notification.send` in the allowlist; chains using its reference handler
+also require host `notify-send` availability. Omitting that method does not
+disable telemetry. Handler/policy changes require relaunching, not recreation.
+See [Host RPC](host-rpc.md#attaching-consumer-handlers) for the command contract,
+path resolution, limits, and examples, and the rest of that document for log
+retention, protocol details, and auditing limitations.
 
 ## Aliases and initialization
 

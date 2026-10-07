@@ -232,17 +232,12 @@ pi_args=(
   "$@"
 )
 
-rpc_notification_available=off
-if command -v notify-send >/dev/null 2>&1; then
-  rpc_notification_available=on
-fi
-
 if [[ $host_rpc_allow != off ]]; then
   rpc_ready_dir=$(mktemp -d)
   rpc_log="${XDG_STATE_HOME:-$HOME/.local/state}/sbx-pi/host-rpc/${workspace_hash}.jsonl"
-  SBX_PI_HOST_RPC_ALLOW="$host_rpc_allow" node "$kit_dir/scripts/host-rpc-listener.mjs" \
+  node "$kit_dir/scripts/host-rpc-listener.mjs" \
     "$session_dir" "$rpc_log" "$sandbox_name" "$workspace" \
-    "$rpc_notification_available" "$rpc_ready_dir/ready" &
+    "$rpc_ready_dir/ready" "$config_file" &
   rpc_listener_pid=$!
   for (( attempt=0; attempt<100; attempt++ )); do
     if [[ -f $rpc_ready_dir/ready ]]; then break; fi

@@ -24,6 +24,17 @@ const { createJiti } = require(
 );
 const extension = createJiti(import.meta.url)(path.resolve("extensions/host-rpc.ts")).default;
 
+function testHandlers(notify = async () => {}) {
+  return {
+    "notification.send": async ({ params }) => {
+      await notify(params.title, params.body);
+      return { status: "performed" };
+    },
+    "network.request": async () => ({ status: "recorded" }),
+    "file.access": async () => ({ status: "recorded" }),
+  };
+}
+
 function request(
   method = "notification.send",
   params = { title: "Done", body: "Project" },
@@ -77,9 +88,9 @@ async function running(t, options = {}) {
     ...f,
     allowed: allowedMethods(undefined, true),
     shouldStop: () => stop,
-    notify: async (...args) => {
+    handlers: testHandlers(async (...args) => {
       notifications.push(args);
-    },
+    }),
     ...options,
   });
   // Observe a failure immediately, even if startup never signals readiness.
@@ -119,7 +130,7 @@ test("dispatcher uses only host allowed methods and validates payloads before si
   const log = [];
   const dispatch = await createDispatcher({
     allowed: allowedMethods("notification.send,network.request", true),
-    notify: async (...args) => performed.push(args),
+    handlers: testHandlers(async (...args) => performed.push(args)),
     record: async (entry) => log.push(entry),
   });
   assert.equal((await dispatch(request())).result.status, "performed");
@@ -165,7 +176,7 @@ test("network requests are record-only, require concrete domains, and never gran
   const log = [];
   const dispatch = await createDispatcher({
     allowed: allowedMethods("network.request", false),
-    notify: async () => assert.fail("network request must not notify/execute"),
+    handlers: testHandlers(async () => assert.fail("network request must not notify/execute")),
     record: async (entry) => log.push(entry),
   });
   assert.equal(
@@ -203,9 +214,9 @@ test("notifications permit small bursts, refill over time, and have no lifetime 
   const dispatch = await createDispatcher({
     allowed: allowedMethods(undefined, true),
     now: () => time,
-    notify: async () => {
+    handlers: testHandlers(async () => {
       calls++;
-    },
+    }),
     record: async (entry) => log.push(entry),
   });
   // Invalid calls do not consume slots.
@@ -292,9 +303,9 @@ test("concurrent notification calls cannot exceed the shared burst allowance", a
   const dispatch = await createDispatcher({
     allowed: allowedMethods("notification.send", true),
     now: () => 0,
-    notify: async () => {
+    handlers: testHandlers(async () => {
       calls++;
-    },
+    }),
     record: async () => {},
   });
   const responses = await Promise.all(
@@ -313,10 +324,10 @@ test("notification handler failures consume rate-limit slots and do not leak hos
   const dispatch = await createDispatcher({
     allowed: allowedMethods("notification.send", true),
     now: () => time,
-    notify: async () => {
+    handlers: testHandlers(async () => {
       calls++;
       throw new Error("host detail must not leak");
-    },
+    }),
     record: async () => {},
   });
   for (let n = 0; n < 3; n++) {
@@ -338,7 +349,7 @@ test("notification handler failures consume rate-limit slots and do not leak hos
 test("failed audit writes fail closed before executing notifications", async () => {
   const dispatch = await createDispatcher({
     allowed: allowedMethods(undefined, true),
-    notify: async () => assert.fail("must fail closed"),
+    handlers: testHandlers(async () => assert.fail("must fail closed")),
     record: async () => {
       throw new Error("disk full");
     },
@@ -425,14 +436,14 @@ test("producers do not create unattended queues or follow queue symlinks", async
 test("listener refuses stale or symlinked queues and never deletes another listener's files", async (t) => {
   const f = await running(t);
   await assert.rejects(
-    listen({ ...f, shouldStop: () => true, allowed: new Set(), notify: async () => {} }),
+    listen({ ...f, shouldStop: () => true, allowed: new Set(), handlers: testHandlers() }),
     /EEXIST/,
   );
   assert.equal(await exists(path.join(f.dir, REQUEST_FILE)), true);
   await f.finish();
   await fs.symlink(f.logFile, path.join(f.dir, RESPONSE_FILE));
   await assert.rejects(
-    listen({ ...f, shouldStop: () => true, allowed: new Set(), notify: async () => {} }),
+    listen({ ...f, shouldStop: () => true, allowed: new Set(), handlers: testHandlers() }),
     /EEXIST/,
   );
   assert.equal(await exists(path.join(f.dir, REQUEST_FILE)), false);
@@ -459,7 +470,7 @@ test("listener fails closed on queue size abuse and cleans its endpoints", async
     ...f,
     allowed: allowedMethods(undefined, true),
     shouldStop: () => stop,
-    notify: async () => assert.fail("oversized queue"),
+    handlers: testHandlers(async () => assert.fail("oversized queue")),
   });
   task.catch(() => {});
   await waitFor(() => exists(f.readyFile));
