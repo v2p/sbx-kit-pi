@@ -3,22 +3,23 @@
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
+import { hasErrorCode, isObject } from "./runtime-validation.mts";
 
-function object(value, description) {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+function object(value: unknown, description: string): Record<string, unknown> {
+  if (!isObject(value)) {
     throw new Error(`${description} must be a JSON object`);
   }
   return value;
 }
 
-function requiredString(value, description) {
+function requiredString(value: unknown, description: string): string {
   if (typeof value !== "string" || value.length === 0) {
     throw new Error(`${description} must be a non-empty string`);
   }
   return value;
 }
 
-function jwtPayload(accessToken) {
+function jwtPayload(accessToken: string): Record<string, unknown> {
   const parts = accessToken.split(".");
   if (parts.length !== 3) {
     throw new Error("Codex access token is not a JWT");
@@ -37,7 +38,7 @@ function jwtPayload(accessToken) {
   }
 }
 
-async function readJson(path, description) {
+async function readJson(path: string, description: string): Promise<unknown> {
   try {
     return JSON.parse(await readFile(path, "utf8"));
   } catch (error) {
@@ -45,11 +46,11 @@ async function readJson(path, description) {
   }
 }
 
-async function readExistingAuth(path) {
+async function readExistingAuth(path: string): Promise<Record<string, unknown>> {
   try {
     return object(await readJson(path, "Pi authentication file"), "Pi authentication file");
   } catch (error) {
-    if (error?.cause?.code === "ENOENT") {
+    if (error instanceof Error && hasErrorCode(error.cause, "ENOENT")) {
       return {};
     }
     throw error;
@@ -59,7 +60,7 @@ async function readExistingAuth(path) {
 async function main() {
   const [sourcePath, targetPath] = process.argv.slice(2);
   if (!sourcePath || !targetPath) {
-    throw new Error("Usage: import-codex-auth.mjs CODEX_AUTH_JSON PI_AUTH_JSON");
+    throw new Error("Usage: import-codex-auth.mts CODEX_AUTH_JSON PI_AUTH_JSON");
   }
 
   const source = object(
@@ -75,7 +76,13 @@ async function main() {
     throw new Error("Codex access token is missing a valid expiration claim");
   }
 
-  const credential = {
+  const credential: {
+    type: "oauth";
+    access: string;
+    refresh: string;
+    expires: number;
+    accountId?: string;
+  } = {
     type: "oauth",
     access,
     refresh,
@@ -83,7 +90,8 @@ async function main() {
   };
 
   const tokenAccountId = tokens.account_id;
-  const claimAccountId = claims["https://api.openai.com/auth"]?.chatgpt_account_id;
+  const accountClaims = claims["https://api.openai.com/auth"];
+  const claimAccountId = isObject(accountClaims) ? accountClaims.chatgpt_account_id : undefined;
   const accountId =
     typeof tokenAccountId === "string" && tokenAccountId.length > 0
       ? tokenAccountId

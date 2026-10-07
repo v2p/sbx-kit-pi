@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { errorMessage } from "./runtime-validation.mts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -17,6 +18,6 @@ try {
   // compinit discovers this header in the user-generated autoload file.
   process.stdout.write(`#compdef ${command}\n\n${source}`);
 } catch (error) {
-  console.error(`sbx-pi: ${error.message}`);
+  console.error(`sbx-pi: ${errorMessage(error)}`);
   process.exitCode = 2;
 }

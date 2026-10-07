@@ -1,4 +1,4 @@
-# Autoload body; completion-generate.mjs prepends the installed command's #compdef header.
+# Autoload body; completion-generate.mts prepends the installed command's #compdef header.
 
 local -a response display
 local kind candidate description

@@ -9,7 +9,7 @@ billing.
 On your **Linux host**, you need:
 
 - Docker Sandboxes with experimental `sbx env` commands and schema-v2 OAuth credential-file support
-- Node.js 22.19+ and npm
+- An official Node.js 22.19+ build with native TypeScript support, and npm
 - A ChatGPT subscription with Codex access
 
 From this checkout, install the launcher:

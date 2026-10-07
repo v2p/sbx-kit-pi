@@ -3,8 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parse } from "smol-toml";
+import { isObject } from "./runtime-validation.mts";
 
-function aliases() {
+type Completion = [kind: "words" | "files", candidates: string[]];
+
+function aliases(): string[] {
   try {
     const file = path.join(
       process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"),
@@ -13,28 +16,25 @@ function aliases() {
     );
     const config = parse(fs.readFileSync(file, "utf8"));
     const table = config.kit_aliases;
-    if (
-      config.schema_version !== 1 ||
-      !table ||
-      typeof table !== "object" ||
-      Array.isArray(table)
-    ) {
+    if (config.schema_version !== 1 || !isObject(table)) {
       return [];
     }
-    return Object.keys(table).filter(
-      (name) =>
+    return Object.keys(table).filter((name) => {
+      const reference = table[name];
+      return (
         /^[a-zA-Z0-9_-]+$/.test(name) &&
-        typeof table[name] === "string" &&
-        table[name].trim() &&
-        !table[name].startsWith("@"),
-    );
+        typeof reference === "string" &&
+        reference.trim() &&
+        !reference.startsWith("@")
+      );
+    });
   } catch {
     // Missing or invalid personal configuration must not interrupt shell completion.
     return [];
   }
 }
 
-function complete(args) {
+function complete(args: string[]): Completion {
   const current = args.at(-1) ?? "";
   const previous = args.slice(0, -1);
   let mode = "run";
@@ -46,12 +46,12 @@ function complete(args) {
     if (previous.length === 0) {
       return ["words", ["show", "alias"]];
     }
-    mode = previous.shift();
+    mode = previous.shift()!;
     if (!["show", "alias"].includes(mode)) {
       return ["words", []];
     }
   } else if (["init", "status", "plan"].includes(previous[0])) {
-    mode = previous.shift();
+    mode = previous.shift()!;
   }
 
   if (mode === "alias") {

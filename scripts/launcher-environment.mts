@@ -2,22 +2,26 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { parse, stringify } from "yaml";
+import type { ResolvedConfig } from "./launcher-types.mts";
+import { errorMessage, hasErrorCode, isObject } from "./runtime-validation.mts";
+
+type EnvironmentMetadata = Partial<Record<"schemaVersion" | "agent" | "name", unknown>>;
 
 // Inspect only the fields the launcher needs. Docker owns validation, merging,
 // argument expansion, path resolution, approval, and provisioning.
-export function inspectEnvironment(files) {
-  const result = {};
+export function inspectEnvironment(files: string[]): EnvironmentMetadata {
+  const result: EnvironmentMetadata = {};
   for (const file of files) {
-    let value;
+    let value: unknown;
     try {
       value = parse(fs.readFileSync(file, "utf8"));
     } catch (error) {
-      throw new Error(`${file}: ${error.message}`, { cause: error });
+      throw new Error(`${file}: ${errorMessage(error)}`, { cause: error });
     }
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
+    if (!isObject(value)) {
       throw new Error(`${file}: environment must be a YAML mapping`);
     }
-    for (const key of ["schemaVersion", "agent", "name"]) {
+    for (const key of ["schemaVersion", "agent", "name"] as const) {
       if (Object.hasOwn(value, key)) {
         result[key] = value[key];
       }
@@ -29,7 +33,7 @@ export function inspectEnvironment(files) {
   return result;
 }
 
-function writePrivateYaml(file, value) {
+function writePrivateYaml(file: string, value: unknown): void {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const temporary = `${file}.${randomUUID()}.tmp`;
   try {
@@ -40,7 +44,7 @@ function writePrivateYaml(file, value) {
   }
 }
 
-export function writeNetworkKit(config, directory) {
+export function writeNetworkKit(config: ResolvedConfig, directory: string): string | null {
   if (!config.networkAllow.length) {
     return null;
   }
@@ -54,9 +58,20 @@ export function writeNetworkKit(config, directory) {
   return kit;
 }
 
-export function writeEnvironmentOverlay(config, directory, sessionDir, importDir) {
+export function writeEnvironmentOverlay(
+  config: ResolvedConfig,
+  directory: string,
+  sessionDir: string,
+  importDir: string | null,
+): string {
   const metadata = inspectEnvironment(config.environmentFiles);
-  const overlay = {
+  const overlay: {
+    agent: string;
+    kits: string[];
+    additionalWorkspaces: { path: string }[];
+    schemaVersion?: string;
+    name?: string | null;
+  } = {
     agent: "pi-openai-codex",
     kits: [config.baseKitDirectory],
     additionalWorkspaces: [{ path: sessionDir }],
@@ -83,18 +98,27 @@ export function writeEnvironmentOverlay(config, directory, sessionDir, importDir
   return file;
 }
 
-export function kitEntrypoint(root) {
-  return parse(fs.readFileSync(path.join(root, "spec.yaml"), "utf8")).sandbox.entrypoint;
+export function kitEntrypoint(root: string): string[] {
+  const spec: unknown = parse(fs.readFileSync(path.join(root, "spec.yaml"), "utf8"));
+  if (
+    !isObject(spec) ||
+    !isObject(spec.sandbox) ||
+    !Array.isArray(spec.sandbox.entrypoint) ||
+    !spec.sandbox.entrypoint.every((arg: unknown) => typeof arg === "string")
+  ) {
+    throw new Error("Kit sandbox.entrypoint must be a string array");
+  }
+  return spec.sandbox.entrypoint;
 }
 
-export function initializeEnvironment(file, kits) {
+export function initializeEnvironment(file: string, kits: string[]): string {
   const content =
     "# Docker Sandbox settings. sbx-pi adds its Pi kit and persistent session mount.\n" +
     stringify({ schemaVersion: "1", agent: "pi-openai-codex", workspace: ".", kits });
   try {
     fs.writeFileSync(file, content, { flag: "wx", mode: 0o644 });
   } catch (error) {
-    if (error.code === "EEXIST") {
+    if (hasErrorCode(error, "EEXIST")) {
       throw new Error(`Refusing to overwrite ${file}`, { cause: error });
     }
     throw error;

@@ -1,6 +1,7 @@
-import { main } from "./main.mjs";
+import { main } from "./main.mts";
+import type { HandlerResult } from "../host-rpc-protocol.mts";
 
-export async function handle() {
+export async function handle(): Promise<HandlerResult> {
   // The listener already recorded this untrusted observation. Never open its path.
   return { status: "recorded" };
 }

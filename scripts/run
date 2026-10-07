@@ -49,9 +49,9 @@ if [[ ${1:-} == completion || ${1:-} == _complete ]]; then
   command=$1
   shift
   if [[ $command == completion ]]; then
-    exec node "$kit_dir/scripts/completion-generate.mjs" "${0##*/}" "$@"
+    exec node "$kit_dir/scripts/completion-generate.mts" "${0##*/}" "$@"
   fi
-  exec node "$kit_dir/scripts/launcher-completion.mjs" "$@"
+  exec node "$kit_dir/scripts/launcher-completion.mts" "$@"
 fi
 
 recreate_existing=0
@@ -187,20 +187,20 @@ done
 launcher=$(readlink -f "${BASH_SOURCE[0]}")
 kit_dir=$(cd "$(dirname "$launcher")/.." && pwd -P)
 if [[ $config_command == alias ]]; then
-  exec node "$kit_dir/scripts/launcher-config.mjs" alias "$@"
+  exec node "$kit_dir/scripts/launcher-config.mts" alias "$@"
 fi
 if [[ $config_command != resolve && $config_command != plan ]]; then
   if (( $# || recreate_existing || import_codex_auth )); then
     printf 'Unexpected arguments for %s\n' "$config_command" >&2
     exit 2
   fi
-  exec node "$kit_dir/scripts/launcher-config.mjs" "$config_command" "${config_args[@]}"
+  exec node "$kit_dir/scripts/launcher-config.mts" "$config_command" "${config_args[@]}"
 fi
 
 config_file=$(mktemp)
-node "$kit_dir/scripts/launcher-config.mjs" resolve "${config_args[@]}" > "$config_file"
+node "$kit_dir/scripts/launcher-config.mts" resolve "${config_args[@]}" > "$config_file"
 protocol_file=$(mktemp)
-node "$kit_dir/scripts/launcher-config.mjs" fields "$config_file" > "$protocol_file"
+node "$kit_dir/scripts/launcher-config.mts" fields "$config_file" > "$protocol_file"
 mapfile -d '' -t resolved < "$protocol_file"
 workspace=${resolved[0]}
 sandbox_name=${resolved[1]}
@@ -219,7 +219,7 @@ if [[ $config_command == plan ]]; then
     printf '%s\n' 'plan requires sbxenv.yaml and accepts only configuration options' >&2
     exit 2
   fi
-  node "$kit_dir/scripts/launcher-config.mjs" environment "$config_file" "$session_dir" > "$protocol_file"
+  node "$kit_dir/scripts/launcher-config.mts" environment "$config_file" "$session_dir" > "$protocol_file"
   mapfile -d '' -t environment_paths < "$protocol_file"
   sbx env plan "${environment_paths[@]}" "${native_args[@]}"
   exit
@@ -235,7 +235,7 @@ pi_args=(
 if [[ $host_rpc_allow != off ]]; then
   rpc_ready_dir=$(mktemp -d)
   rpc_log="${XDG_STATE_HOME:-$HOME/.local/state}/sbx-pi/host-rpc/${workspace_hash}.jsonl"
-  node "$kit_dir/scripts/host-rpc-listener.mjs" \
+  node "$kit_dir/scripts/host-rpc-listener.mts" \
     "$session_dir" "$rpc_log" "$sandbox_name" "$workspace" \
     "$rpc_ready_dir/ready" "$config_file" &
   rpc_listener_pid=$!
@@ -281,7 +281,7 @@ if (( sandbox_exists && import_codex_auth && ! recreate_existing )); then
 fi
 
 if (( sandbox_exists && ! recreate_existing )) && [[ $environment_mode == legacy ]]; then
-  node "$kit_dir/scripts/launcher-config.mjs" compare "$config_file"
+  node "$kit_dir/scripts/launcher-config.mts" compare "$config_file"
   sbx run --name "$sandbox_name" -- "${pi_args[@]}"
   exit
 fi
@@ -319,22 +319,22 @@ fi
 if [[ $environment_mode == native ]]; then
   # Native YAML owns sandbox resources and approvals. This adapter only adds
   # the Pi kit and its host persistence; do not translate YAML into sbx flags.
-  node "$kit_dir/scripts/launcher-config.mjs" environment "$config_file" "$session_dir" "$import_dir" > "$protocol_file"
+  node "$kit_dir/scripts/launcher-config.mts" environment "$config_file" "$session_dir" "$import_dir" > "$protocol_file"
   mapfile -d '' -t environment_paths < "$protocol_file"
   if (( recreate_existing )) && { (( sandbox_exists )) || [[ -z $sandbox_name ]]; }; then
     sbx env rm "${environment_paths[@]}" "${native_args[@]}" --force
-    node "$kit_dir/scripts/launcher-config.mjs" forget "$config_file"
+    node "$kit_dir/scripts/launcher-config.mts" forget "$config_file"
   fi
   if (( sandbox_exists && ! recreate_existing )); then
-    node "$kit_dir/scripts/launcher-config.mjs" compare "$config_file"
+    node "$kit_dir/scripts/launcher-config.mts" compare "$config_file"
   fi
   sbx env run "${environment_paths[@]}" "${native_args[@]}" --detached
   if [[ -n $sandbox_name ]] && (( ! sandbox_exists || recreate_existing )); then
-    node "$kit_dir/scripts/launcher-config.mjs" record "$config_file"
+    node "$kit_dir/scripts/launcher-config.mts" record "$config_file"
   fi
   # env run has no agent-argument passthrough. env exec keeps Docker's environment
   # resolution while allowing Pi arguments, using the kit's actual entrypoint.
-  node "$kit_dir/scripts/launcher-config.mjs" entrypoint > "$protocol_file"
+  node "$kit_dir/scripts/launcher-config.mts" entrypoint > "$protocol_file"
   mapfile -d '' -t entrypoint < "$protocol_file"
   terminal_args=(-i)
   if [[ -t 0 && -t 1 ]]; then terminal_args+=(-t); fi
@@ -350,7 +350,7 @@ if (( recreate_existing )); then
   if (( sandbox_exists )); then
     printf 'Recreating sandbox %s with the current kit image and selected mixins\n' "$sandbox_name"
     sbx rm -f "$sandbox_name"
-    node "$kit_dir/scripts/launcher-config.mjs" forget "$config_file"
+    node "$kit_dir/scripts/launcher-config.mts" forget "$config_file"
   else
     printf 'Sandbox %s does not exist; creating it with the current kit image and selected mixins\n' "$sandbox_name"
   fi
@@ -368,7 +368,7 @@ for kit in "${additional_kits[@]}"; do
   kit_args+=(--kit "$kit")
 done
 
-node "$kit_dir/scripts/launcher-config.mjs" network-kit "$config_file" > "$protocol_file"
+node "$kit_dir/scripts/launcher-config.mts" network-kit "$config_file" > "$protocol_file"
 network_kit=$(< "$protocol_file")
 if [[ -n $network_kit ]]; then kit_args+=(--kit "$network_kit"); fi
 
@@ -384,4 +384,4 @@ sbx run \
   "$workspace" \
   "${volume_args[@]}" \
   -- "${pi_args[@]}"
-node "$kit_dir/scripts/launcher-config.mjs" record "$config_file"
+node "$kit_dir/scripts/launcher-config.mts" record "$config_file"

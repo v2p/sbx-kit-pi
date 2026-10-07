@@ -16,6 +16,9 @@ npm run format:check
 printf '%s\n' '==> Linting JavaScript and TypeScript'
 npm run lint
 
+printf '%s\n' '==> Type-checking TypeScript'
+npm run typecheck
+
 printf '%s\n' '==> Running static tests'
 npm test
 

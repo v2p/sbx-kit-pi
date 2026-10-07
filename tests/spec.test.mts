@@ -1,20 +1,21 @@
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
-const { spawnSync } = require("node:child_process");
-const test = require("node:test");
-const YAML = require("yaml");
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import test from "node:test";
+import * as YAML from "yaml";
+import tokenUsage from "../extensions/token-usage.ts";
+import { extensionHarness } from "./helpers/extension-harness.mts";
 
-const root = path.resolve(__dirname, "..");
-const { createJiti } = require(
-  require.resolve("jiti", {
-    paths: [path.join(root, "node_modules", "@earendil-works", "pi-coding-agent")],
-  }),
-);
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const source = fs.readFileSync(path.join(root, "spec.yaml"), "utf8");
 const dockerfile = fs.readFileSync(path.join(root, "Dockerfile"), "utf8");
-const packageMetadata = require(path.join(root, "package.json"));
+const packageMetadata = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
+  version: string;
+  devDependencies: Record<string, string>;
+};
 const spec = YAML.parse(source);
 
 function credential() {
@@ -49,19 +50,11 @@ test("uses the same Pi version for tests and the sandbox image", () => {
 });
 
 test("reports detailed usage after each interactive LLM turn", () => {
-  const load = createJiti(__filename);
-  const extension = load(path.join(root, "extensions", "token-usage.ts")).default;
-  let turnEnd;
-  extension({
-    on(event, handler) {
-      if (event === "turn_end") {
-        turnEnd = handler;
-      }
-    },
-  });
+  const { handlers } = extensionHarness(tokenUsage);
+  const turnEnd = handlers.turn_end;
   assert.equal(typeof turnEnd, "function");
 
-  const notifications = [];
+  const notifications: { message: string; type: string }[] = [];
   const event = {
     message: {
       role: "assistant",
@@ -77,11 +70,11 @@ test("reports detailed usage after each interactive LLM turn", () => {
   };
   turnEnd(event, {
     mode: "tui",
-    ui: { notify: (message, type) => notifications.push({ message, type }) },
+    ui: { notify: (message: string, type: string) => notifications.push({ message, type }) },
   });
   turnEnd(event, {
     mode: "json",
-    ui: { notify: (message, type) => notifications.push({ message, type }) },
+    ui: { notify: (message: string, type: string) => notifications.push({ message, type }) },
   });
 
   assert.deepEqual(notifications, [
@@ -213,7 +206,7 @@ test("imports a Codex CLI OAuth credential into Pi's auth format", () => {
   try {
     const result = spawnSync(
       process.execPath,
-      [path.join(root, "scripts", "import-codex-auth.mjs"), sourcePath, targetPath],
+      [path.join(root, "scripts", "import-codex-auth.mts"), sourcePath, targetPath],
       { encoding: "utf8" },
     );
     assert.equal(result.status, 0, result.stderr);

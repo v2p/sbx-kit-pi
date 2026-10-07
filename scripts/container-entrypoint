@@ -36,7 +36,7 @@ if [[ -n $import_path ]]; then
     exit 1
   fi
 
-  node /opt/sbx-kit-pi/scripts/import-codex-auth.mjs \
+  node /opt/sbx-kit-pi/scripts/import-codex-auth.mts \
     "$import_path" \
     "$HOME/.pi/agent/auth.json"
 

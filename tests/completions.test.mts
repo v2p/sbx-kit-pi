@@ -1,4 +1,5 @@
 import test from "node:test";
+import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -12,7 +13,7 @@ if (process.env.SBX_PI_REQUIRE_ZSH === "1" && !zshAvailable) {
   throw new Error("Zsh is required for completion integration tests");
 }
 
-function generate(f, command = "my-pi") {
+function generate(f: ReturnType<typeof fixture>, command = "my-pi") {
   const result = f.execute(command, ["completion", "zsh"]);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stderr, "");
@@ -22,7 +23,7 @@ function generate(f, command = "my-pi") {
   return directory;
 }
 
-function fixture(t) {
+function fixture(t: TestContext) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-pi-completion-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const bin = path.join(dir, "bin");
@@ -47,7 +48,7 @@ function fixture(t) {
     global,
     'schema_version = 1\n[kit_aliases]\nnode = "docker.io/acme/node:1"\nnode_tools = "./tools"\n',
   );
-  const env = {
+  const env: NodeJS.ProcessEnv & { MOCK_LOG: string; XDG_STATE_HOME: string } = {
     ...process.env,
     PATH: `${bin}:${process.env.PATH}`,
     HOME: home,
@@ -56,9 +57,9 @@ function fixture(t) {
     SBX_PI_HOST_RPC_ALLOW: "invalid",
     MOCK_LOG: path.join(dir, "log"),
   };
-  const execute = (command, args) =>
+  const execute = (command: string, args: string[]) =>
     spawnSync(command, args, { cwd: workspace, env, encoding: "utf8" });
-  const complete = (...words) => {
+  const complete = (...words: string[]) => {
     const result = execute("my-pi", ["_complete", ...words]);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stderr, "");
@@ -183,7 +184,7 @@ test(
 test("Zsh autoload completion dispatches words versus files", { skip: !zshAvailable }, (t) => {
   const f = fixture(t);
   f.env.SBX_PI_TEST_FPATH = generate(f);
-  const zshComplete = (...input) => {
+  const zshComplete = (...input: string[]) => {
     const result = f.execute("zsh", [
       "-f",
       "-c",
@@ -204,7 +205,7 @@ test("Zsh autoload completion dispatches words versus files", { skip: !zshAvaila
 test("Zsh displays help without inserting descriptions", { skip: !zshAvailable }, (t) => {
   const f = fixture(t);
   f.env.SBX_PI_TEST_FPATH = generate(f);
-  const suggest = (...input) => {
+  const suggest = (...input: string[]) => {
     const result = f.execute("zsh", [
       "-f",
       "-c",

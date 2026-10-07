@@ -2,7 +2,8 @@ import { basename, dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { METHODS, callHost, enqueue } from "../scripts/host-rpc-protocol.mjs";
+import { METHODS, callHost, enqueue } from "../scripts/host-rpc-protocol.mts";
+import type { MethodCall } from "../scripts/host-rpc-protocol.mts";
 
 function clean(value: string | undefined, fallback: string, max = 160): string {
   // eslint-disable-next-line no-control-regex
@@ -23,13 +24,13 @@ function endpoint(ctx: ExtensionContext) {
   return file ? { dir: dirname(file), session: basename(file) } : undefined;
 }
 
-async function send(ctx: ExtensionContext, method: string, params: Record<string, string>) {
+async function send(ctx: ExtensionContext, ...call: MethodCall) {
   const target = endpoint(ctx);
   if (!target) {
     return;
   }
   try {
-    await enqueue(target.dir, target.session, method, params);
+    await enqueue(target.dir, target.session, ...call);
   } catch (error) {
     // Telemetry must never block an actual tool or completion.
     console.error(`[host-rpc] ${error instanceof Error ? error.message : String(error)}`);

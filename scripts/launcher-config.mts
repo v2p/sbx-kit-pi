@@ -12,17 +12,19 @@ import {
   initializeEnvironment,
   kitEntrypoint,
   writeNetworkKit,
-} from "./launcher-environment.mjs";
+} from "./launcher-environment.mts";
 
-import { METHODS } from "./host-rpc-protocol.mjs";
-import { allowedMethods } from "./host-rpc-listener.mjs";
-import { resolveHandlers } from "./host-rpc-handlers.mjs";
+import { isMethod } from "./host-rpc-protocol.mts";
+import { allowedMethods } from "./host-rpc-listener.mts";
+import { resolveHandlers } from "./host-rpc-handlers.mts";
+import type { AppliedConfig, Preferences, ResolvedConfig } from "./launcher-types.mts";
+import { errorMessage, hasErrorCode, isObject } from "./runtime-validation.mts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const hash = (value) => createHash("sha256").update(value).digest("hex");
+const hash = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
 const home = os.homedir();
 
-function string(value, label) {
+function string(value: unknown, label: string): string {
   // Reject control characters before passing configuration through the NUL-delimited protocol.
   // eslint-disable-next-line no-control-regex
   if (typeof value !== "string" || !value.trim() || /[\x00-\x1f\x7f]/.test(value)) {
@@ -31,12 +33,12 @@ function string(value, label) {
   return value;
 }
 
-function load(file, global = false) {
-  let config;
+function load(file: string, global = false): Preferences {
+  let config: Record<string, unknown>;
   try {
     config = parse(fs.readFileSync(file, "utf8"));
   } catch (error) {
-    throw new Error(`${file}: ${error.message}`, { cause: error });
+    throw new Error(`${file}: ${errorMessage(error)}`, { cause: error });
   }
   const allowed = global
     ? ["schema_version", "kit_aliases", "host_rpc"]
@@ -52,13 +54,10 @@ function load(file, global = false) {
   if (config.host_rpc !== undefined) {
     const rpc = config.host_rpc;
     if (
-      !rpc ||
-      typeof rpc !== "object" ||
-      Array.isArray(rpc) ||
+      !isObject(rpc) ||
       Object.keys(rpc).some((key) => !["allow", "handlers"].includes(key)) ||
       (rpc.allow !== undefined &&
-        (!Array.isArray(rpc.allow) ||
-          rpc.allow.some((method) => !Object.values(METHODS).includes(method))))
+        (!Array.isArray(rpc.allow) || rpc.allow.some((method: unknown) => !isMethod(method))))
     ) {
       throw new Error(
         `${file}: host_rpc must contain only an allow array and a handlers table of built-in methods`,
@@ -70,9 +69,7 @@ function load(file, global = false) {
   }
   if (config.network !== undefined) {
     if (
-      !config.network ||
-      typeof config.network !== "object" ||
-      Array.isArray(config.network) ||
+      !isObject(config.network) ||
       Object.keys(config.network).some((key) => key !== "allow") ||
       !Array.isArray(config.network.allow)
     ) {
@@ -87,24 +84,21 @@ function load(file, global = false) {
     config.kits.forEach((value) => string(value, `${file}: kit`));
   }
   if (config.kit_aliases !== undefined) {
-    if (
-      !config.kit_aliases ||
-      typeof config.kit_aliases !== "object" ||
-      Array.isArray(config.kit_aliases)
-    ) {
+    if (!isObject(config.kit_aliases)) {
       throw new Error(`${file}: kit_aliases must be a table`);
     }
     for (const [name, value] of Object.entries(config.kit_aliases)) {
       if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
         throw new Error(`${file}: invalid alias ${name}`);
       }
-      string(value, `${file}: alias ${name}`);
-      if (value.startsWith("@")) {
+      const reference = string(value, `${file}: alias ${name}`);
+      if (reference.startsWith("@")) {
         throw new Error(`${file}: aliases cannot reference aliases`);
       }
     }
   }
-  return config;
+  // Every supported field has been validated; unknown settings were rejected.
+  return config as unknown as Preferences;
 }
 
 function globalConfigFile() {
@@ -115,7 +109,7 @@ function globalConfigFile() {
   );
 }
 
-function createAlias(args) {
+function createAlias(args: string[]): void {
   const replace = args.includes("--replace");
   const positional = args.filter((arg) => arg !== "--replace");
   if (positional.length !== 2 || args.length !== positional.length + Number(replace)) {
@@ -147,7 +141,7 @@ function createAlias(args) {
   try {
     descriptor = fs.openSync(lock, "wx", 0o600);
   } catch (error) {
-    if (error.code === "EEXIST") {
+    if (hasErrorCode(error, "EEXIST")) {
       throw new Error(
         `Global configuration is locked: ${lock}. Retry, or remove a stale lock after checking no alias command is running.`,
         { cause: error },
@@ -161,7 +155,7 @@ function createAlias(args) {
     if (existing && !existing.isFile()) {
       throw new Error(`Refusing to replace non-regular configuration file: ${file}`);
     }
-    const config = existing ? load(file, true) : { schema_version: 1 };
+    const config: Preferences = existing ? load(file, true) : { schema_version: 1 };
     if (Object.hasOwn(config.kit_aliases ?? {}, name) && !replace) {
       throw new Error(`Kit alias @${name} already exists; use --replace to change it`);
     }
@@ -176,14 +170,14 @@ function createAlias(args) {
   console.log(`Saved @${name} = ${JSON.stringify(ref)} in ${file}`);
 }
 
-function resolve(args, initialize = false) {
+function resolve(args: string[], initialize = false): ResolvedConfig {
   const cwd = fs.realpathSync(process.cwd());
-  let projectFile,
-    disabled = initialize,
-    cliKits;
-  const environmentFiles = [];
-  const nativeArguments = [];
-  let cliHosts;
+  let projectFile: string | undefined;
+  const environmentFiles: string[] = [];
+  const nativeArguments: string[] = [];
+  let disabled = initialize;
+  let cliKits: string[] | undefined;
+  let cliHosts: string[] | undefined;
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
       case "--config":
@@ -282,8 +276,8 @@ function resolve(args, initialize = false) {
     }
   }
   const globalFile = globalConfigFile();
-  const global = fs.existsSync(globalFile) ? load(globalFile, true) : {};
-  const project = projectFile ? load(projectFile) : {};
+  const global: Partial<Preferences> = fs.existsSync(globalFile) ? load(globalFile, true) : {};
+  const project: Partial<Preferences> = projectFile ? load(projectFile) : {};
   const workspace = fs.realpathSync(projectDirectory);
   const environment = environmentFiles.length ? inspectEnvironment(environmentFiles) : null;
   const networkAllow = cliHosts ?? project.network?.allow ?? [];
@@ -295,13 +289,13 @@ function resolve(args, initialize = false) {
       "With sbxenv.yaml, configure kits in YAML; remove TOML kits and do not use --kit/--no-kits",
     );
   }
-  const resolveReference = (ref, dir) => {
+  const resolveReference = (ref: string, dir: string): string => {
     if (ref.startsWith("@")) {
       const alias = ref.slice(1);
       if (!Object.hasOwn(global.kit_aliases ?? {}, alias)) {
         throw new Error(`Unknown kit alias: ${ref}`);
       }
-      return resolveReference(global.kit_aliases[alias], path.dirname(globalFile));
+      return resolveReference(global.kit_aliases![alias], path.dirname(globalFile));
     }
     return ref.startsWith(".") || path.isAbsolute(ref) ? path.resolve(dir, ref) : ref;
   };
@@ -366,7 +360,7 @@ function resolve(args, initialize = false) {
   };
 }
 
-function initializeProject(args) {
+function initializeProject(args: string[]): void {
   const config = resolve(args, true);
   const file = path.join(config.workspace, "sbxenv.yaml");
   const kits = config.kits.map((ref) => {
@@ -385,11 +379,12 @@ function initializeProject(args) {
   console.log(`Created ${file}\n\n${content}`);
 }
 
-function applied(config) {
+function applied(config: ResolvedConfig): AppliedConfig | null {
   try {
-    return JSON.parse(fs.readFileSync(config.stateFile, "utf8"));
+    // Host-owned state written atomically by the record command below.
+    return JSON.parse(fs.readFileSync(config.stateFile, "utf8")) as AppliedConfig;
   } catch (error) {
-    if (error.code === "ENOENT") {
+    if (hasErrorCode(error, "ENOENT")) {
       return null;
     }
     throw error;
@@ -407,7 +402,7 @@ try {
   } else if (
     ["fields", "environment", "network-kit", "record", "compare", "forget"].includes(command)
   ) {
-    const config = JSON.parse(fs.readFileSync(args[0], "utf8"));
+    const config = JSON.parse(fs.readFileSync(args[0], "utf8")) as ResolvedConfig;
     if (command === "fields") {
       process.stdout.write(
         [
@@ -497,7 +492,7 @@ try {
           {
             sandbox: config.sandboxName,
             workspace: config.workspace,
-            status: !names.includes(config.sandboxName)
+            status: !names.includes(config.sandboxName ?? "")
               ? "not-created"
               : !previous
                 ? "unknown"
@@ -517,6 +512,6 @@ try {
     }
   }
 } catch (error) {
-  console.error(`sbx-pi: ${error.message}`);
+  console.error(`sbx-pi: ${errorMessage(error)}`);
   process.exitCode = 2;
 }

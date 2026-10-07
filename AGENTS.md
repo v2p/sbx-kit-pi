@@ -8,14 +8,15 @@ This repository is `sbx-kit-pi`: a Docker Sandbox kit that launches the Pi codin
 - `Dockerfile` builds the custom sandbox image with Pi and bundled extensions under `/opt/sbx-kit-pi/extensions/`.
 - `scripts/run` is the host launcher. It derives a workspace-specific sandbox/session name and runs or attaches via `sbx run`; Docker Sandbox pulls the published custom image.
 - `extensions/agents-postprocessor.ts` and `extensions/agents-classifier-output.ts` implement preprocessing for Docker Sandbox-generated `AGENTS.md` files and generated skills.
-- `tests/spec.test.js` contains static tests for the kit contract.
+- `tests/spec.test.mts` contains static tests for the kit contract.
 - `Makefile` is intentionally limited to building/publishing the image and installing/uninstalling the optional user command.
 
 ## Development workflow
 
-- Use Node.js 22.19+.
-- Run `npm test` for static tests.
-- Run `./scripts/check` to install locked dependencies, audit, test, build and smoke-test the custom image when Docker is available, and run `sbx kit validate .` when `sbx` is available.
+- Use an official Node.js 22.19+ build with native TypeScript stripping; some distro builds omit it.
+- Runtime modules and tests use `.mts`; Pi extensions use `.ts`. Keep explicit import extensions, type-only imports, and erasable syntax so Node can run scripts without a build step or loader.
+- Run `npm test` for static tests and `npm run typecheck` for strict checking of scripts, extensions, and tests.
+- Run `./scripts/check` to install locked dependencies, audit, format-check, lint, type-check, test, build and smoke-test the custom image when Docker is available, and run `sbx kit validate .` when `sbx` is available.
 - Use `make image` for a local image build plus smoke test and `make publish` for a release push.
 - Run `sbx kit validate .` on a Docker Sandbox host when changing `spec.yaml`.
 - Keep tests focused on observable kit contracts and safety invariants. Do not add tests that mirror arbitrary file contents or implementation details; they are brittle and mostly catch intentional refactors rather than user-visible regressions.

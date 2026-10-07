@@ -18,13 +18,13 @@ help: ## Show available targets
 
 image: ## Build and smoke-test the sandbox image
 	docker build --build-arg PI_AGENT_VERSION=$(PI_AGENT_VERSION) -t "$(IMAGE)" .
-	docker run --rm --entrypoint sh "$(IMAGE)" -c 'test "$$(pi --version)" = "$(PI_AGENT_VERSION)" && test -r /opt/sbx-kit-pi/extensions/agents-postprocessor.ts && test -r /opt/sbx-kit-pi/extensions/agents-classifier-output.ts && test -r /opt/sbx-kit-pi/extensions/host-rpc.ts && test -r /opt/sbx-kit-pi/scripts/host-rpc-protocol.mjs && test -r /opt/sbx-kit-pi/extensions/token-usage.ts && test -x /opt/sbx-kit-pi/scripts/container-entrypoint && test -x /opt/sbx-kit-pi/scripts/import-codex-auth.mjs && pi --offline --no-extensions --extension /opt/sbx-kit-pi/extensions/agents-postprocessor.ts --extension /opt/sbx-kit-pi/extensions/host-rpc.ts --extension /opt/sbx-kit-pi/extensions/token-usage.ts --list-models openai-codex >/dev/null'
+	docker run --rm --entrypoint sh "$(IMAGE)" -c 'test "$$(pi --version)" = "$(PI_AGENT_VERSION)" && test -r /opt/sbx-kit-pi/extensions/agents-postprocessor.ts && test -r /opt/sbx-kit-pi/extensions/agents-classifier-output.ts && test -r /opt/sbx-kit-pi/extensions/host-rpc.ts && test -r /opt/sbx-kit-pi/scripts/host-rpc-protocol.mts && test -r /opt/sbx-kit-pi/extensions/token-usage.ts && test -x /opt/sbx-kit-pi/scripts/container-entrypoint && test -x /opt/sbx-kit-pi/scripts/import-codex-auth.mts && node --input-type=module -e "await import(\"/opt/sbx-kit-pi/scripts/host-rpc-protocol.mts\")" && pi --offline --no-extensions --extension /opt/sbx-kit-pi/extensions/agents-postprocessor.ts --extension /opt/sbx-kit-pi/extensions/host-rpc.ts --extension /opt/sbx-kit-pi/extensions/token-usage.ts --list-models openai-codex >/dev/null'
 
 publish: image ## Build, verify, and push the versioned image
 	docker push "$(IMAGE)"
 
 install: ## Install a global user command at $(BINDIR)/$(COMMAND)
-	@node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 19)) process.exit(1); require("smol-toml")' >/dev/null 2>&1 || { printf 'Install Node.js 22.19+ and run npm ci --omit=dev --ignore-scripts before make install\n' >&2; exit 1; }
+	@node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 19) || !process.features.typescript) process.exit(1); import("smol-toml").catch(() => process.exit(1))' >/dev/null 2>&1 || { printf 'Install an official Node.js 22.19+ build with TypeScript support and run npm ci --omit=dev --ignore-scripts before make install\n' >&2; exit 1; }
 	@mkdir -p "$(BINDIR)"
 	@ln -sfn "$(CURDIR)/scripts/run" "$(BINDIR)/$(COMMAND)"
 	@printf 'Installed %s -> %s\n' "$(BINDIR)/$(COMMAND)" "$(CURDIR)/scripts/run"

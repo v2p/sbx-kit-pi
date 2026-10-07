@@ -1,4 +1,6 @@
 import test from "node:test";
+import type { TestContext } from "node:test";
+import type { Method, Params, HostRequest } from "../scripts/host-rpc-protocol.mts";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -10,10 +12,10 @@ import {
   resolveHandlers,
   defaultCommand,
   notificationAvailable,
-} from "../scripts/host-rpc-handlers.mjs";
-import { createDispatcher, allowedMethods } from "../scripts/host-rpc-listener.mjs";
+} from "../scripts/host-rpc-handlers.mts";
+import { createDispatcher, allowedMethods } from "../scripts/host-rpc-listener.mts";
 
-async function fixture(t) {
+async function fixture(t: TestContext) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "sbx-rpc-handlers-"));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const script = path.join(dir, "consumer.mjs");
@@ -31,15 +33,25 @@ console.log(JSON.stringify({ status: 'recorded' }));
   return { dir, script };
 }
 
+function envelope(id?: string): HostRequest<"network.request">;
+function envelope<M extends Method>(id: string, method: M, params: Params[M]): HostRequest<M>;
 function envelope(
   id = "request-1",
-  method = "network.request",
-  params = { host: "example.com", reason: "Manual review" },
-) {
-  return { jsonrpc: "2.0", sbxVersion: 1, id, session: "session.jsonl", method, params };
+  method: Method = "network.request",
+  params: Params[Method] = { host: "example.com", reason: "Manual review" },
+): HostRequest {
+  // The overloads correlate the method and parameters, including the default.
+  return {
+    jsonrpc: "2.0",
+    sbxVersion: 1,
+    id,
+    session: "session.jsonl",
+    method,
+    params,
+  } as HostRequest;
 }
 
-function handlers(config, dir) {
+function handlers(config: unknown, dir: string) {
   return createHandlers(resolveHandlers(config, dir), {
     cwd: dir,
     sandbox: "sandbox",
@@ -50,7 +62,7 @@ function handlers(config, dir) {
 test("reference handlers are configured by default and record network/file reports without acting on them", async (t) => {
   const { dir } = await fixture(t);
   const commands = resolveHandlers(undefined, dir);
-  for (const method of ["notification.send", "network.request", "file.access"]) {
+  for (const method of ["notification.send", "network.request", "file.access"] as Method[]) {
     assert.deepEqual(commands[method], [defaultCommand(method)]);
   }
   const run = handlers(undefined, dir);
@@ -90,18 +102,18 @@ test("consumers receive validated data and host context in order, after audit, w
       },
     },
     record: async (entry) => {
-      if (entry.status === "accepted") {
+      if ("status" in entry && entry.status === "accepted") {
         audited = true;
       }
     },
   });
   const request = envelope();
   request.params.reason = 'Review $(touch forbidden); "quoted" & <data>';
-  assert.equal((await dispatch(JSON.stringify(request))).result.status, "recorded");
+  assert.equal((await dispatch(JSON.stringify(request))).result?.status, "recorded");
   const received = (await fs.readFile(path.join(dir, "received.jsonl"), "utf8"))
     .trim()
     .split("\n")
-    .map(JSON.parse);
+    .map((line) => JSON.parse(line) as { name: string; request: unknown; context: unknown });
   assert.deepEqual(
     received.map((entry) => entry.name),
     ["first", "second"],
@@ -109,13 +121,13 @@ test("consumers receive validated data and host context in order, after audit, w
   assert.deepEqual(received[0].request, request);
   assert.deepEqual(received[0].context, { sandbox: "sandbox", workspace: "/host/workspace" });
   await assert.rejects(fs.access(path.join(dir, "forbidden")));
-  assert.equal((await dispatch(JSON.stringify(request))).error.code, -32002);
+  assert.equal((await dispatch(JSON.stringify(request))).error?.code, -32002);
   assert.equal(
     (
       await dispatch(
         JSON.stringify(envelope("invalid", "network.request", { host: "--help", reason: "x" })),
       )
-    ).error.code,
+    ).error?.code,
     -32602,
   );
   assert.equal(
@@ -129,7 +141,7 @@ test("consumers receive validated data and host context in order, after audit, w
           }),
         ),
       )
-    ).error.code,
+    ).error?.code,
     -32001,
   );
   assert.equal(
@@ -162,6 +174,7 @@ test("failed, malformed, oversized and timed-out handlers fail the call without 
     failed: 'console.error("private host detail"); process.exitCode = 1;',
     malformed: 'console.log(JSON.stringify({ status: "approved" }));',
     oversized: 'console.log("x".repeat(5000));',
+    stderr: 'console.error("x".repeat(5000)); console.log(JSON.stringify({ status: "recorded" }));',
     timeout: 'setTimeout(() => console.log("private host detail"), 10000);',
   })) {
     const failing = path.join(dir, `${name}.mjs`);
@@ -188,7 +201,7 @@ test("failed, malformed, oversized and timed-out handlers fail the call without 
 });
 
 test("reference notifications are unavailable without notify-send, but custom-only chains remain available", () => {
-  const module = new URL("../scripts/host-rpc-handlers.mjs", import.meta.url).href;
+  const module = new URL("../scripts/host-rpc-handlers.mts", import.meta.url).href;
   const result = spawnSync(
     process.execPath,
     [
@@ -229,7 +242,7 @@ setTimeout(() => {}, 10000);
       record: async () => {},
     });
     const started = performance.now();
-    assert.equal((await dispatch(JSON.stringify(envelope()))).error.code, -32603);
+    assert.equal((await dispatch(JSON.stringify(envelope()))).error?.code, -32603);
     assert.ok(performance.now() - started < 4000, "descendant pipes must not delay the timeout");
     await delay(800);
     await assert.rejects(fs.access(marker));
@@ -248,3 +261,42 @@ test("a failed audit never invokes configured consumers", async (t) => {
   await assert.rejects(dispatch(JSON.stringify(envelope())), /audit full/);
   await assert.rejects(fs.access(path.join(dir, "received.jsonl")));
 });
+
+test("missing handler executables fail closed without running later consumers", async (t) => {
+  const { dir, script } = await fixture(t);
+  const dispatch = await createDispatcher({
+    allowed: allowedMethods("network.request", true),
+    handlers: handlers(
+      {
+        "network.request": [[path.join(dir, "absent")], [process.execPath, script, "must-not-run"]],
+      },
+      dir,
+    ),
+    record: async () => {},
+  });
+  assert.equal((await dispatch(JSON.stringify(envelope()))).error?.code, -32603);
+  await assert.rejects(fs.access(path.join(dir, "received.jsonl")));
+});
+
+test(
+  "successful early exits also clean up descendants retaining pipes",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const { dir } = await fixture(t);
+    const script = path.join(dir, "early-exit.mjs");
+    const marker = path.join(dir, "unexpected-side-effect");
+    const childSource = `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'unexpected'), 500);`;
+    await fs.writeFile(
+      script,
+      `
+import { spawn } from 'node:child_process';
+spawn(process.execPath, ['-e', ${JSON.stringify(childSource)}], { stdio: 'inherit' }).unref();
+console.log(JSON.stringify({ status: 'recorded' }));
+`,
+    );
+    const run = handlers({ "network.request": [[process.execPath, script]] }, dir);
+    assert.deepEqual(await run["network.request"](envelope()), { status: "recorded" });
+    await delay(800);
+    await assert.rejects(fs.access(marker));
+  },
+);

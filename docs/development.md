@@ -1,16 +1,20 @@
 # Development
 
-Use Node.js 22.19+; image builds also require Docker. Install locked tools:
+Use an official Node.js 22.19+ build with native TypeScript stripping; some distro
+builds omit it. Check with `node -p process.features.typescript` (expect `strip`
+or `transform`). The sandbox image includes an official Node runtime. Image builds
+also require Docker. Install locked tools:
 
 ```console
 npm ci --ignore-scripts
 npm test
+npm run typecheck
 npm run lint
 npm run format:check
 ```
 
 Run the complete check with `./scripts/check`. It installs dependencies, audits,
-checks formatting/lint, runs tests, builds and smoke-tests the image when Docker
+checks formatting/lint and types, runs tests, builds and smoke-tests the image when Docker
 is available, and runs `sbx kit validate .` when `sbx` is available. Run skipped
 checks on a Docker Sandbox host. For a quick iteration use `npm test`; audit
 separately with `npm run audit`.
@@ -41,7 +45,14 @@ rebuild and test both a fresh sandbox and recreation of an existing one.
 
 ## Code style
 
-JavaScript, MJS, and TypeScript use ESLint's recommended JavaScript and
+Runtime modules and tests use `.mts` (explicit ESM); Pi extensions use `.ts`.
+Node executes the scripts directly without a build step or runtime loader. Keep
+explicit `.mts`/`.ts` import extensions and type-only imports. `tsconfig.json`
+enforces strict checking and erasable syntax: no enums, parameter properties, or
+other constructs that require code generation. The tooling-only ESLint config
+remains JavaScript so ESLint does not need an additional loader.
+
+TypeScript and the ESLint config use ESLint's recommended JavaScript and
 typescript-eslint presets. Prettier owns formatting: 100-column width, two-space
 indentation, double quotes, semicolons, and trailing commas. EditorConfig keeps
 indentation and line endings consistent. `eslint-config-prettier` disables
@@ -53,8 +64,12 @@ npm run lint:fix
 npm run format
 ```
 
-CI runs lint and formatting through `scripts/check`. The TypeScript preset is
-not type-aware and is not a substitute for type checking. Use narrow inline
+CI runs lint, formatting, and `tsc --noEmit` through `scripts/check`, including
+the extensions and test fixtures. Keep parsed external data `unknown` until
+runtime validation narrows it; static types do not validate JSON, TOML, YAML,
+handler output, or RPC records. Share protocol/configuration types rather than
+redeclaring contracts in consumers. The lint preset is not type-aware; `tsc`
+provides the type checking. Use narrow inline
 suppressions with explanations rather than disabling rules globally.
 
 Keep tests focused on observable contracts and safety invariants, not arbitrary

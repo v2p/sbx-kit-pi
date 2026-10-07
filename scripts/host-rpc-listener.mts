@@ -1,5 +1,6 @@
 import { constants } from "node:fs";
 import { mkdir, open, readFile, unlink, writeFile } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -11,10 +12,31 @@ import {
   MAX_QUEUE_BYTES,
   Records,
   validRequest,
-  validParams,
-} from "./host-rpc-protocol.mjs";
+  validHostRequest,
+  isMethod,
+} from "./host-rpc-protocol.mts";
+import type { HostHandlers, HostRequest, Method, Response } from "./host-rpc-protocol.mts";
+import { createHandlers, notificationAvailable } from "./host-rpc-handlers.mts";
+import type { ResolvedConfig } from "./launcher-types.mts";
+import { errorMessage } from "./runtime-validation.mts";
 
-import { createHandlers, notificationAvailable } from "./host-rpc-handlers.mjs";
+export type AuditEntry =
+  | { request: HostRequest; status: "accepted" }
+  | { id?: string; method?: string; session?: string; response: Response };
+export interface DispatcherOptions {
+  allowed: ReadonlySet<Method>;
+  handlers: HostHandlers;
+  record: (entry: AuditEntry) => Promise<void>;
+  now?: () => number;
+}
+export interface ListenerOptions extends Pick<DispatcherOptions, "allowed" | "handlers"> {
+  sessionDir: string;
+  logFile: string;
+  sandbox: string;
+  workspace: string;
+  readyFile: string;
+  shouldStop: () => boolean;
+}
 
 const METHOD_NAMES = Object.values(METHODS);
 const MAX_CALLS = 10000;
@@ -22,14 +44,17 @@ const MAX_LOG_BYTES = 16 * 1024 * 1024;
 const NOTIFICATION_BURST = 3;
 const NOTIFICATION_REFILL_MS = 10000;
 
-function failure(id, code, message) {
+function failure(id: string | null, code: number, message: string): Response {
   return { jsonrpc: "2.0", id, error: { code, message } };
 }
 
-export function allowedMethods(value, notificationAvailable) {
+export function allowedMethods(
+  value: string | undefined,
+  notificationAvailable: boolean,
+): Set<Method> {
   const names =
     value === undefined ? METHOD_NAMES : value === "off" || value === "" ? [] : value.split(",");
-  if (names.some((name) => !METHOD_NAMES.includes(name))) {
+  if (!names.every(isMethod)) {
     throw new Error("SBX_PI_HOST_RPC_ALLOW contains an unknown method");
   }
   return new Set(
@@ -37,13 +62,21 @@ export function allowedMethods(value, notificationAvailable) {
   );
 }
 
+function invokeHandler<M extends Method>(
+  handlers: HostHandlers,
+  method: M,
+  request: HostRequest<M>,
+) {
+  return handlers[method](request);
+}
+
 export async function createDispatcher({
   allowed,
   handlers,
   record,
   now = () => performance.now(),
-}) {
-  const seen = new Set();
+}: DispatcherOptions): Promise<(line: string | null) => Promise<Response>> {
+  const seen = new Set<string>();
   let notificationTokens = NOTIFICATION_BURST;
   let notificationUpdatedAt = now();
   const takeNotificationToken = () => {
@@ -61,7 +94,7 @@ export async function createDispatcher({
     return true;
   };
   return async (line) => {
-    let request;
+    let request: unknown;
     try {
       request = JSON.parse(line ?? "");
     } catch {
@@ -74,19 +107,19 @@ export async function createDispatcher({
       await record({ response });
       return response;
     }
-    const { id, method, params } = request;
-    let response;
+    const { id, method } = request;
+    let response: Response;
     if (seen.has(id)) {
       response = failure(id, -32002, "Duplicate request ID");
     } else if (seen.size >= MAX_CALLS) {
       response = failure(id, -32003, "Request limit reached");
     } else {
       seen.add(id);
-      if (!METHOD_NAMES.includes(method)) {
+      if (!isMethod(method)) {
         response = failure(id, -32601, "Unknown method");
       } else if (!allowed.has(method)) {
         response = failure(id, -32001, "Method not allowed by host");
-      } else if (!validParams(method, params)) {
+      } else if (!validHostRequest(request)) {
         response = failure(id, -32602, "Invalid parameters");
       } else if (method === METHODS.NOTIFICATION_SEND && !takeNotificationToken()) {
         response = failure(id, -32003, "Notification rate limit reached");
@@ -94,7 +127,7 @@ export async function createDispatcher({
         // Record before any host side effect; a failed/full log fails closed.
         await record({ request, status: "accepted" });
         try {
-          const result = await handlers[method](request);
+          const result = await invokeHandler(handlers, request.method, request);
           response = { jsonrpc: "2.0", id, result };
         } catch {
           response = failure(id, -32603, "Host handler failed");
@@ -116,11 +149,11 @@ export async function listen({
   readyFile,
   shouldStop,
   handlers,
-}) {
+}: ListenerOptions): Promise<void> {
   const paths = [join(sessionDir, REQUEST_FILE), join(sessionDir, RESPONSE_FILE)];
-  const handles = [];
-  let log;
-  let lock;
+  const handles: FileHandle[] = [];
+  let log: FileHandle | undefined;
+  let lock: FileHandle | undefined;
   try {
     // The host-side lock is outside the session mount: unlinking shared queue
     // files cannot allow another listener to take over an active bridge.
@@ -162,7 +195,8 @@ export async function listen({
     if (logBytes >= MAX_LOG_BYTES) {
       throw new Error("Host RPC log is full; archive it on the host before relaunching");
     }
-    const record = async (data) => {
+    const auditLog = log;
+    const record = async (data: AuditEntry) => {
       const line =
         JSON.stringify({ receivedAt: new Date().toISOString(), sandbox, workspace, ...data }) +
         "\n";
@@ -170,7 +204,7 @@ export async function listen({
       if (logBytes > MAX_LOG_BYTES) {
         throw new Error("Host RPC log is full; archive it on the host before relaunching");
       }
-      await log.writeFile(line);
+      await auditLog.writeFile(line);
     };
     const dispatch = await createDispatcher({ allowed, record, handlers });
     const decoder = new Records();
@@ -236,7 +270,20 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   }
   const [sessionDir, logFile, sandbox, workspace, readyFile, configFile] = process.argv.slice(2);
   try {
-    const config = JSON.parse(await readFile(configFile, "utf8"));
+    if (
+      !sessionDir ||
+      !logFile ||
+      sandbox === undefined ||
+      !workspace ||
+      !readyFile ||
+      !configFile
+    ) {
+      throw new Error(
+        "Usage: host-rpc-listener.mts SESSION_DIR LOG_FILE SANDBOX WORKSPACE READY_FILE CONFIG_FILE",
+      );
+    }
+    // This private file is produced by the host launcher, not the sandbox.
+    const config = JSON.parse(await readFile(configFile, "utf8")) as ResolvedConfig;
     const commands = config.hostRpcHandlers;
     await listen({
       sessionDir,
@@ -252,7 +299,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       handlers: createHandlers(commands, { cwd: config.hostRpcHandlerCwd, sandbox, workspace }),
     });
   } catch (error) {
-    console.error(`sbx-pi host RPC: ${error.message}`);
+    console.error(`sbx-pi host RPC: ${errorMessage(error)}`);
     process.exitCode = 2;
   }
 }

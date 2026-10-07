@@ -7,23 +7,19 @@ export default [
   { ignores: ["node_modules/**", ".idea/**"] },
   {
     ...js.configs.recommended,
-    files: ["**/*.{js,mjs,ts}"],
+    files: ["**/*.{js,mjs,ts,mts}"],
     languageOptions: { globals: globals.nodeBuiltin },
   },
   ...tseslint.configs.recommended.map((config) => ({
     ...config,
-    files: ["**/*.ts"],
+    files: ["**/*.{ts,mts}"],
   })),
   {
-    files: ["**/*.js"],
-    languageOptions: { sourceType: "commonjs", globals: globals.node },
-  },
-  {
-    files: ["**/*.{mjs,ts}"],
+    files: ["**/*.{js,mjs,ts,mts}"],
     languageOptions: { sourceType: "module" },
   },
   {
-    files: ["**/*.ts"],
+    files: ["**/*.{ts,mts}"],
     rules: {
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
     },
@@ -31,7 +27,7 @@ export default [
   // Formatting belongs to Prettier, not competing ESLint style rules.
   prettier,
   {
-    files: ["**/*.{js,mjs,ts}"],
+    files: ["**/*.{js,mjs,ts,mts}"],
     rules: {
       curly: ["error", "all"],
     },

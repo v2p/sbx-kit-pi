@@ -3,6 +3,7 @@ import { open } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { hasErrorCode, isObject } from "./runtime-validation.mts";
 
 export const REQUEST_FILE = ".host-rpc.requests.jsonl";
 export const RESPONSE_FILE = ".host-rpc.responses.jsonl";
@@ -12,18 +13,49 @@ export const METHODS = Object.freeze({
   NOTIFICATION_SEND: "notification.send",
   NETWORK_REQUEST: "network.request",
   FILE_ACCESS: "file.access",
-});
+} as const);
 
-function object(value, keys) {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    Object.keys(value).every((key) => keys.includes(key))
-  );
+export type Method = (typeof METHODS)[keyof typeof METHODS];
+export interface Params {
+  "notification.send": { title: string; body: string };
+  "network.request": { host: string; reason: string };
+  "file.access": { path: string; toolCallId: string; phase: "attempt" | "success" | "error" };
+}
+export interface RequestEnvelope {
+  jsonrpc: "2.0";
+  sbxVersion: 1;
+  id: string;
+  method: string;
+  params: Record<string, unknown>;
+  session: string;
+}
+type RequestMap = {
+  [M in Method]: RequestEnvelope & { method: M; params: Params[M] };
+};
+export type HostRequest<M extends Method = Method> = RequestMap[M];
+export interface HandlerResult {
+  status: "recorded" | "performed";
+}
+export type Response =
+  | { jsonrpc: "2.0"; id: string; result: HandlerResult; error?: never }
+  | { jsonrpc: "2.0"; id: string | null; error: { code: number; message: string }; result?: never };
+export type HostHandlers = {
+  [M in Method]: (request: HostRequest<M>) => Promise<HandlerResult>;
+};
+export type MethodCall = { [M in Method]: [method: M, params: Params[M]] }[Method];
+type CancellableMethodCall = {
+  [M in Method]: [method: M, params: Params[M], signal?: AbortSignal | undefined];
+}[Method];
+
+export function isMethod(value: unknown): value is Method {
+  return typeof value === "string" && Object.values(METHODS).some((method) => method === value);
 }
 
-function text(value, max) {
+function object(value: unknown, keys: string[]): value is Record<string, unknown> {
+  return isObject(value) && Object.keys(value).every((key) => keys.includes(key));
+}
+
+function text(value: unknown, max: number): value is string {
   return (
     typeof value === "string" &&
     value.length > 0 &&
@@ -33,7 +65,7 @@ function text(value, max) {
   );
 }
 
-export function validRequest(request) {
+export function validRequest(request: unknown): request is RequestEnvelope {
   return (
     object(request, ["jsonrpc", "sbxVersion", "id", "method", "params", "session"]) &&
     request.jsonrpc === "2.0" &&
@@ -48,7 +80,7 @@ export function validRequest(request) {
   );
 }
 
-export function validParams(method, params) {
+export function validParams(method: string, params: unknown): boolean {
   switch (method) {
     case METHODS.NOTIFICATION_SEND:
       return object(params, ["title", "body"]) && text(params.title, 160) && text(params.body, 320);
@@ -68,11 +100,41 @@ export function validParams(method, params) {
         text(params.path, 2048) &&
         isAbsolute(params.path) &&
         text(params.toolCallId, 256) &&
+        typeof params.phase === "string" &&
         ["attempt", "success", "error"].includes(params.phase)
       );
     default:
       return false;
   }
+}
+
+export function validHostRequest(request: RequestEnvelope): request is HostRequest {
+  return isMethod(request.method) && validParams(request.method, request.params);
+}
+
+export function validResult(result: unknown): result is HandlerResult {
+  return (
+    isObject(result) &&
+    Object.keys(result).length === 1 &&
+    (result.status === "recorded" || result.status === "performed")
+  );
+}
+
+export function validResponse(response: unknown): response is Response {
+  if (!object(response, ["jsonrpc", "id", "result", "error"]) || response.jsonrpc !== "2.0") {
+    return false;
+  }
+  if (response.error !== undefined) {
+    return (
+      response.result === undefined &&
+      (response.id === null || typeof response.id === "string") &&
+      object(response.error, ["code", "message"]) &&
+      typeof response.error.code === "number" &&
+      Number.isInteger(response.error.code) &&
+      typeof response.error.message === "string"
+    );
+  }
+  return typeof response.id === "string" && validResult(response.result);
 }
 
 // A bounded incremental decoder. Oversized lines are discarded through their
@@ -81,8 +143,8 @@ export class Records {
   pending = Buffer.alloc(0);
   dropping = false;
 
-  feed(chunk) {
-    const records = [];
+  feed(chunk: Buffer): (string | null)[] {
+    const records: (string | null)[] = [];
     let start = 0;
     while (start < chunk.length) {
       const newline = chunk.indexOf(10, start);
@@ -108,7 +170,11 @@ export class Records {
   }
 }
 
-export async function callHost(sessionDir, session, method, params, signal) {
+export async function callHost(
+  sessionDir: string,
+  session: string,
+  ...[method, params, signal]: CancellableMethodCall
+): Promise<HandlerResult & { id: string }> {
   signal?.throwIfAborted();
   const replies = await open(
     join(sessionDir, RESPONSE_FILE),
@@ -121,7 +187,8 @@ export async function callHost(sessionDir, session, method, params, signal) {
     }
     let position = stat.size;
     signal?.throwIfAborted();
-    const id = await enqueue(sessionDir, session, method, params);
+    // The pair comes from the correlated CancellableMethodCall tuple above.
+    const id = await enqueue(sessionDir, session, ...([method, params] as MethodCall));
     if (!id) {
       throw new Error("Host RPC listener is unavailable");
     }
@@ -143,19 +210,19 @@ export async function callHost(sessionDir, session, method, params, signal) {
         );
         position += bytesRead;
         for (const line of decoder.feed(buffer.subarray(0, bytesRead))) {
-          let response;
+          let response: unknown;
           try {
             response = JSON.parse(line ?? "");
           } catch {
             continue;
           }
-          if (response?.jsonrpc === "2.0" && response.id === id) {
+          if (validResponse(response) && response.id === id) {
             if (response.error) {
               throw new Error(
                 `Host rejected RPC (${response.error.code}): ${response.error.message}`,
               );
             }
-            if (["recorded", "performed"].includes(response.result?.status)) {
+            if (response.result) {
               return { id, status: response.result.status };
             }
           }
@@ -170,7 +237,11 @@ export async function callHost(sessionDir, session, method, params, signal) {
   }
 }
 
-export async function enqueue(sessionDir, session, method, params) {
+export async function enqueue(
+  sessionDir: string,
+  session: string,
+  ...[method, params]: MethodCall
+): Promise<string | undefined> {
   if (!isAbsolute(sessionDir) || !validParams(method, params)) {
     throw new Error("Invalid host RPC request");
   }
@@ -197,7 +268,7 @@ export async function enqueue(sessionDir, session, method, params) {
     }
     return id;
   } catch (error) {
-    if (error.code === "ENOENT") {
+    if (hasErrorCode(error, "ENOENT")) {
       return undefined;
     }
     throw error;

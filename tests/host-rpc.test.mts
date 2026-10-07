@@ -1,11 +1,15 @@
 import test from "node:test";
+import type { TestContext } from "node:test";
+import type { HostHandlers } from "../scripts/host-rpc-protocol.mts";
+import type { AuditEntry, ListenerOptions } from "../scripts/host-rpc-listener.mts";
+import extension from "../extensions/host-rpc.ts";
+import { extensionHarness } from "./helpers/extension-harness.mts";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createRequire } from "node:module";
 import { setTimeout as delay } from "node:timers/promises";
-import { allowedMethods, createDispatcher, listen } from "../scripts/host-rpc-listener.mjs";
+import { allowedMethods, createDispatcher, listen } from "../scripts/host-rpc-listener.mts";
 import {
   REQUEST_FILE,
   RESPONSE_FILE,
@@ -14,20 +18,15 @@ import {
   Records,
   enqueue,
   callHost,
-} from "../scripts/host-rpc-protocol.mjs";
+} from "../scripts/host-rpc-protocol.mts";
 
-const require = createRequire(import.meta.url);
-const { createJiti } = require(
-  require.resolve("jiti", {
-    paths: [path.resolve("node_modules/@earendil-works/pi-coding-agent")],
-  }),
-);
-const extension = createJiti(import.meta.url)(path.resolve("extensions/host-rpc.ts")).default;
-
-function testHandlers(notify = async () => {}) {
+function testHandlers(
+  notify: (title: string, body: string) => Promise<unknown> = async () => {},
+): HostHandlers {
   return {
-    "notification.send": async ({ params }) => {
-      await notify(params.title, params.body);
+    "notification.send": async (request) => {
+      assert.ok(request.method === "notification.send");
+      await notify(request.params.title, request.params.body);
       return { status: "performed" };
     },
     "network.request": async () => ({ status: "recorded" }),
@@ -37,7 +36,7 @@ function testHandlers(notify = async () => {}) {
 
 function request(
   method = "notification.send",
-  params = { title: "Done", body: "Project" },
+  params: Record<string, unknown> = { title: "Done", body: "Project" },
   id = "call-1",
 ) {
   return JSON.stringify({
@@ -50,7 +49,7 @@ function request(
   });
 }
 
-async function fixture(t) {
+async function fixture(t: TestContext) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "sbx-rpc-"));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   return {
@@ -63,7 +62,7 @@ async function fixture(t) {
   };
 }
 
-async function waitFor(check) {
+async function waitFor(check: () => Promise<boolean>) {
   for (let n = 0; n < 200; n++) {
     if (await check()) {
       return;
@@ -73,17 +72,17 @@ async function waitFor(check) {
   throw new Error("Timed out waiting for test condition");
 }
 
-async function exists(file) {
+async function exists(file: string) {
   return fs.access(file).then(
     () => true,
     () => false,
   );
 }
 
-async function running(t, options = {}) {
+async function running(t: TestContext, options: Partial<ListenerOptions> = {}) {
   const f = await fixture(t);
   let stop = false;
-  const notifications = [];
+  const notifications: [string, string][] = [];
   const task = listen({
     ...f,
     allowed: allowedMethods(undefined, true),
@@ -110,8 +109,12 @@ async function running(t, options = {}) {
   };
 }
 
-async function lines(file) {
-  return (await fs.readFile(file, "utf8")).trim().split("\n").filter(Boolean).map(JSON.parse);
+async function lines(file: string): Promise<Record<string, unknown>[]> {
+  return (await fs.readFile(file, "utf8"))
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 test("framing preserves partial Unicode records and recovers after oversized records", () => {
@@ -126,18 +129,20 @@ test("framing preserves partial Unicode records and recovers after oversized rec
 });
 
 test("dispatcher uses only host allowed methods and validates payloads before side effects", async () => {
-  const performed = [];
-  const log = [];
+  const performed: [string, string][] = [];
+  const log: AuditEntry[] = [];
   const dispatch = await createDispatcher({
     allowed: allowedMethods("notification.send,network.request", true),
     handlers: testHandlers(async (...args) => performed.push(args)),
-    record: async (entry) => log.push(entry),
+    record: async (entry) => {
+      log.push(entry);
+    },
   });
-  assert.equal((await dispatch(request())).result.status, "performed");
-  assert.equal((await dispatch(request())).error.code, -32002);
+  assert.equal((await dispatch(request())).result?.status, "performed");
+  assert.equal((await dispatch(request())).error?.code, -32002);
   assert.equal(
     (await dispatch(request("host.exec", { command: "touch /tmp/forbidden" }, "unknown"))).error
-      .code,
+      ?.code,
     -32601,
   );
   assert.equal(
@@ -145,7 +150,7 @@ test("dispatcher uses only host allowed methods and validates payloads before si
       await dispatch(
         request("file.access", { path: "/private", toolCallId: "1", phase: "attempt" }, "denied"),
       )
-    ).error.code,
+    ).error?.code,
     -32001,
   );
   for (const [n, params] of [
@@ -155,16 +160,16 @@ test("dispatcher uses only host allowed methods and validates payloads before si
     { title: "", body: "x" },
   ].entries()) {
     assert.equal(
-      (await dispatch(request("notification.send", params, `bad-${n}`))).error.code,
+      (await dispatch(request("notification.send", params, `bad-${n}`))).error?.code,
       -32602,
     );
   }
-  assert.equal((await dispatch("not JSON")).error.code, -32700);
+  assert.equal((await dispatch("not JSON")).error?.code, -32700);
   assert.equal(
-    (await dispatch(request().replace('"sbxVersion":1', '"sbxVersion":2'))).error.code,
+    (await dispatch(request().replace('"sbxVersion":1', '"sbxVersion":2'))).error?.code,
     -32600,
   );
-  assert.equal((await dispatch("[]")).error.code, -32600);
+  assert.equal((await dispatch("[]")).error?.code, -32600);
   assert.deepEqual(performed, [["Done", "Project"]]);
   assert.equal(JSON.stringify(log).includes("touch /tmp/forbidden"), false);
   assert.deepEqual([...allowedMethods(undefined, false)], ["network.request", "file.access"]);
@@ -173,11 +178,13 @@ test("dispatcher uses only host allowed methods and validates payloads before si
 });
 
 test("network requests are record-only, require concrete domains, and never grant access", async () => {
-  const log = [];
+  const log: AuditEntry[] = [];
   const dispatch = await createDispatcher({
     allowed: allowedMethods("network.request", false),
     handlers: testHandlers(async () => assert.fail("network request must not notify/execute")),
-    record: async (entry) => log.push(entry),
+    record: async (entry) => {
+      log.push(entry);
+    },
   });
   assert.equal(
     (
@@ -187,7 +194,7 @@ test("network requests are record-only, require concrete domains, and never gran
           reason: "Install locked dependencies",
         }),
       )
-    ).result.status,
+    ).result?.status,
     "recorded",
   );
   for (const [n, host] of [
@@ -200,52 +207,58 @@ test("network requests are record-only, require concrete domains, and never gran
   ].entries()) {
     assert.equal(
       (await dispatch(request("network.request", { host, reason: "Needed" }, `invalid-${n}`))).error
-        .code,
+        ?.code,
       -32602,
     );
   }
-  assert.equal(log.filter((entry) => entry.status === "accepted").length, 1);
+  assert.equal(log.filter((entry) => "status" in entry && entry.status === "accepted").length, 1);
 });
 
 test("notifications permit small bursts, refill over time, and have no lifetime cap", async () => {
   let time = 0;
   let calls = 0;
-  const log = [];
+  const log: AuditEntry[] = [];
   const dispatch = await createDispatcher({
     allowed: allowedMethods(undefined, true),
     now: () => time,
     handlers: testHandlers(async () => {
       calls++;
     }),
-    record: async (entry) => log.push(entry),
+    record: async (entry) => {
+      log.push(entry);
+    },
   });
   // Invalid calls do not consume slots.
   assert.equal(
-    (await dispatch(request("notification.send", { title: "", body: "x" }, "invalid"))).error.code,
+    (await dispatch(request("notification.send", { title: "", body: "x" }, "invalid"))).error?.code,
     -32602,
   );
   for (let n = 0; n < 3; n++) {
     assert.equal(
-      (await dispatch(request(undefined, undefined, `burst-${n}`))).result.status,
+      (await dispatch(request(undefined, undefined, `burst-${n}`))).result?.status,
       "performed",
     );
   }
-  assert.equal((await dispatch(request(undefined, undefined, "burst-0"))).error.code, -32002);
+  assert.equal((await dispatch(request(undefined, undefined, "burst-0"))).error?.code, -32002);
   assert.deepEqual((await dispatch(request(undefined, undefined, "overflow"))).error, {
     code: -32003,
     message: "Notification rate limit reached",
   });
-  assert.ok(log.some((entry) => entry.id === "overflow" && entry.response.error.code === -32003));
+  assert.ok(
+    log.some(
+      (entry) => "id" in entry && entry.id === "overflow" && entry.response.error?.code === -32003,
+    ),
+  );
   // All session labels share the bucket; other handlers remain available.
   const otherSession = JSON.parse(request(undefined, undefined, "other-session"));
   otherSession.session = "other.jsonl";
-  assert.equal((await dispatch(JSON.stringify(otherSession))).error.code, -32003);
+  assert.equal((await dispatch(JSON.stringify(otherSession))).error?.code, -32003);
   assert.equal(
     (
       await dispatch(
         request("network.request", { host: "example.com", reason: "Review" }, "network"),
       )
-    ).result.status,
+    ).result?.status,
     "recorded",
   );
   assert.equal(
@@ -257,7 +270,7 @@ test("notifications permit small bursts, refill over time, and have no lifetime 
           "read",
         ),
       )
-    ).result.status,
+    ).result?.status,
     "recorded",
   );
   assert.equal(calls, 3);
@@ -265,33 +278,36 @@ test("notifications permit small bursts, refill over time, and have no lifetime 
   for (const partial of [5000, 9999]) {
     time = partial;
     assert.equal(
-      (await dispatch(request(undefined, undefined, `partial-${partial}`))).error.code,
+      (await dispatch(request(undefined, undefined, `partial-${partial}`))).error?.code,
       -32003,
     );
   }
   time = 10000;
   assert.equal(
-    (await dispatch(request(undefined, undefined, "refilled"))).result.status,
+    (await dispatch(request(undefined, undefined, "refilled"))).result?.status,
     "performed",
   );
   assert.equal(
-    (await dispatch(request(undefined, undefined, "refilled-overflow"))).error.code,
+    (await dispatch(request(undefined, undefined, "refilled-overflow"))).error?.code,
     -32003,
   );
   // Long idle periods replenish at most the burst allowance.
   time += 60000;
   for (let n = 0; n < 3; n++) {
     assert.equal(
-      (await dispatch(request(undefined, undefined, `idle-${n}`))).result.status,
+      (await dispatch(request(undefined, undefined, `idle-${n}`))).result?.status,
       "performed",
     );
   }
-  assert.equal((await dispatch(request(undefined, undefined, "idle-overflow"))).error.code, -32003);
+  assert.equal(
+    (await dispatch(request(undefined, undefined, "idle-overflow"))).error?.code,
+    -32003,
+  );
   // A long-running launcher can send more than the former 60-call cap.
   for (let n = 0; n < 70; n++) {
     time += 10000;
     assert.equal(
-      (await dispatch(request(undefined, undefined, `later-${n}`))).result.status,
+      (await dispatch(request(undefined, undefined, `later-${n}`))).result?.status,
       "performed",
     );
   }
@@ -332,15 +348,15 @@ test("notification handler failures consume rate-limit slots and do not leak hos
   });
   for (let n = 0; n < 3; n++) {
     const response = await dispatch(request(undefined, undefined, `n-${n}`));
-    assert.equal(response.error.code, -32603);
+    assert.equal(response.error?.code, -32603);
     assert.equal(JSON.stringify(response).includes("host detail"), false);
   }
-  assert.equal((await dispatch(request(undefined, undefined, "overflow"))).error.code, -32003);
+  assert.equal((await dispatch(request(undefined, undefined, "overflow"))).error?.code, -32003);
   assert.equal(calls, 3);
   time = 10000;
-  assert.equal((await dispatch(request(undefined, undefined, "refilled"))).error.code, -32603);
+  assert.equal((await dispatch(request(undefined, undefined, "refilled"))).error?.code, -32603);
   assert.equal(
-    (await dispatch(request(undefined, undefined, "overflow-again"))).error.code,
+    (await dispatch(request(undefined, undefined, "overflow-again"))).error?.code,
     -32003,
   );
   assert.equal(calls, 4);
@@ -484,15 +500,7 @@ test("extension emits only settled notifications and read metadata, never file c
   const f = await fixture(t);
   const queue = path.join(f.dir, REQUEST_FILE);
   await fs.writeFile(queue, "");
-  const handlers = {};
-  const tools = [];
-  extension({
-    on: (event, handler) => {
-      handlers[event] = handler;
-    },
-    registerTool: (tool) => tools.push(tool),
-    getSessionName: () => "Named session",
-  });
+  const { handlers, tools } = extensionHarness(extension);
   const ctx = {
     cwd: f.dir,
     isIdle: () => true,
@@ -522,7 +530,9 @@ test("extension emits only settled notifications and read metadata, never file c
     { toolName: "bash", input: { command: "cat private.txt" }, toolCallId: "shell" },
     ctx,
   );
-  const events = await lines(queue);
+  const events = (await lines(
+    queue,
+  )) as unknown as import("../scripts/host-rpc-protocol.mts").HostRequest[];
   assert.deepEqual(
     events.map((event) => event.method),
     ["notification.send", "file.access", "file.access"],

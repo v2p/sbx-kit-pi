@@ -1,4 +1,6 @@
 import test from "node:test";
+import type { TestContext } from "node:test";
+import type { Preferences, ResolvedConfig, ConfigStatus } from "../scripts/launcher-types.mts";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -10,7 +12,7 @@ import { parse as parseYaml } from "yaml";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-function fixture(t) {
+function fixture(t: TestContext) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-pi-config-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const workspace = path.join(dir, "project");
@@ -21,7 +23,13 @@ function fixture(t) {
   for (const directory of [subdir, home, bin, path.join(configHome, "sbx-pi")]) {
     fs.mkdirSync(directory, { recursive: true });
   }
-  const env = {
+  const env: NodeJS.ProcessEnv & {
+    HOME: string;
+    XDG_CONFIG_HOME: string;
+    XDG_STATE_HOME: string;
+    MOCK_STATE: string;
+    MOCK_LOG: string;
+  } = {
     ...process.env,
     HOME: home,
     XDG_CONFIG_HOME: configHome,
@@ -60,23 +68,28 @@ else if (args[0] === 'run') {
   );
   const manifest = path.join(workspace, "sbx-pi.toml");
   const global = path.join(configHome, "sbx-pi", "global.toml");
-  const run = (args = [], overrides = {}) =>
+  const run = (args: string[] = [], overrides: NodeJS.ProcessEnv = {}) =>
     spawnSync(path.join(root, "scripts/run"), args, {
       cwd: subdir,
       env: { ...env, ...overrides },
       encoding: "utf8",
     });
-  const show = (args = [], overrides = {}) => {
+  const show = (args: string[] = [], overrides: NodeJS.ProcessEnv = {}): ResolvedConfig => {
     const result = run(["config", "show", ...args], overrides);
     assert.equal(result.status, 0, result.stderr);
     return JSON.parse(result.stdout);
   };
-  const status = () => {
+  const status = (): ConfigStatus => {
     const result = run(["status"]);
     assert.equal(result.status, 0, result.stderr);
     return JSON.parse(result.stdout);
   };
-  const calls = () => fs.readFileSync(env.MOCK_LOG, "utf8").trim().split("\n").map(JSON.parse);
+  const calls = (): string[][] =>
+    fs
+      .readFileSync(env.MOCK_LOG, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as string[]);
   return { dir, workspace, subdir, manifest, global, env, run, show, status, calls };
 }
 
@@ -200,7 +213,7 @@ test("config alias creates global aliases usable by show and init without invoki
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Saved @node/);
   assert.deepEqual(
-    { ...parse(fs.readFileSync(f.global, "utf8")).kit_aliases },
+    { ...(parse(fs.readFileSync(f.global, "utf8")) as unknown as Preferences).kit_aliases },
     { node: "docker.io/acme/node:1" },
   );
   assert.equal(fs.statSync(f.global).mode & 0o777, 0o600);
@@ -228,11 +241,11 @@ test("config alias preserves global settings, resolves CLI paths, and requires e
   assert.equal(replaced.status, 0, replaced.stderr);
   const local = f.run(["config", "alias", "local", './kits/tools "quoted"']);
   assert.equal(local.status, 0, local.stderr);
-  const config = parse(fs.readFileSync(f.global, "utf8"));
-  assert.deepEqual(config.host_rpc.allow, []);
-  assert.equal(config.kit_aliases.node, "docker.io/acme/node:2");
-  assert.equal(config.kit_aliases.local, path.join(f.subdir, 'kits/tools "quoted"'));
-  assert.deepEqual(f.show(["--kit", "@local"]).kits, [config.kit_aliases.local]);
+  const config = parse(fs.readFileSync(f.global, "utf8")) as unknown as Preferences;
+  assert.deepEqual(config.host_rpc?.allow, []);
+  assert.equal(config.kit_aliases?.node, "docker.io/acme/node:2");
+  assert.equal(config.kit_aliases?.local, path.join(f.subdir, 'kits/tools "quoted"'));
+  assert.deepEqual(f.show(["--kit", "@local"]).kits, [config.kit_aliases?.local]);
   assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
   assert.equal(fs.existsSync(`${f.global}.lock`), false);
 });
@@ -488,6 +501,7 @@ test("tracks applied kits, warns on drift, and recreates using the persisted man
   assert.equal(first.status, 0, first.stderr);
   assert.match(first.stdout, /docker.io\/acme\/node:1/);
   const create = f.calls().find((call) => call[0] === "run");
+  assert.ok(create);
   assert.ok(create.includes(f.workspace));
   assert.deepEqual(create.slice(create.indexOf("--kit"), create.indexOf("pi-openai-codex")), [
     "--kit",
@@ -506,8 +520,9 @@ test("tracks applied kits, warns on drift, and recreates using the persisted man
   assert.equal(attached.status, 0, attached.stderr);
   assert.match(attached.stderr, /Attaching without changes/);
   const attachCall = f.calls().at(-1);
+  assert.ok(attachCall);
   assert.equal(attachCall.includes("--kit"), false);
-  assert.equal(f.status().appliedKits[0], "docker.io/acme/node:1");
+  assert.equal(f.status().appliedKits?.[0], "docker.io/acme/node:1");
   const update = f.run(["--recreate"]);
   assert.equal(update.status, 0, update.stderr);
   assert.equal(f.status().status, "current");
@@ -525,7 +540,7 @@ test("tracks applied kits, warns on drift, and recreates using the persisted man
 test("unknown legacy state and failed recreation never claim a current configuration", (t) => {
   const f = fixture(t);
   fs.writeFileSync(f.manifest, "schema_version = 1");
-  fs.writeFileSync(f.env.MOCK_STATE, f.show().sandboxName);
+  fs.writeFileSync(f.env.MOCK_STATE, f.show().sandboxName!);
   assert.equal(f.status().status, "unknown");
   const attach = f.run();
   assert.equal(attach.status, 0, attach.stderr);
@@ -576,6 +591,7 @@ lifecycle:
   assert.equal(result.status, 0, result.stderr);
   const calls = f.calls();
   const provision = calls.find((args) => args[0] === "env" && args[1] === "run");
+  assert.ok(provision);
   assert.equal(provision[2], environment);
   assert.equal(provision.at(-1), "--detached");
   assert.equal(provision.includes("--auto-approve"), false);
@@ -589,6 +605,7 @@ lifecycle:
   assert.equal(fs.statSync(overlayFile).mode & 0o777, 0o600);
   assert.equal(overlayFile.startsWith(f.workspace + path.sep), false);
   const attach = calls.find((args) => args[0] === "env" && args[1] === "exec");
+  assert.ok(attach);
   assert.ok(attach.includes("/opt/sbx-kit-pi/scripts/container-entrypoint"));
   assert.ok(attach.includes("--session-dir"));
   assert.deepEqual(attach.slice(-2), ["--continue", "prompt with spaces"]);
@@ -600,13 +617,12 @@ lifecycle:
   assert.equal(f.status().status, "exists");
   const second = f.run();
   assert.equal(second.status, 0, second.stderr);
-  assert.equal(
-    f
-      .calls()
-      .filter((args) => args[0] === "env" && args[1] === "run")
-      .at(-1)[3],
-    overlayFile,
-  );
+  const lastProvision = f
+    .calls()
+    .filter((args) => args[0] === "env" && args[1] === "run")
+    .at(-1);
+  assert.ok(lastProvision);
+  assert.equal(lastProvision[3], overlayFile);
 });
 
 test("explicit native layers and arguments are passed to Docker without local expansion", (t) => {
@@ -674,6 +690,7 @@ test("native recreation delegates resource cleanup and does not attach after pro
   const recreated = f.run(["--recreate"], { SBX_PI_HOST_RPC_ALLOW: "off" });
   assert.equal(recreated.status, 0, recreated.stderr);
   const removal = f.calls().find((call) => call[0] === "env" && call[1] === "rm");
+  assert.ok(removal);
   assert.equal(removal.at(-1), "--force");
   assert.equal(
     f.calls().some((call) => call[0] === "rm"),
@@ -695,6 +712,7 @@ test("supplemental allowed hosts become sandbox-only permissions and require rec
   const first = f.run();
   assert.equal(first.status, 0, first.stderr);
   const provision = f.calls().find((call) => call[0] === "env" && call[1] === "run");
+  assert.ok(provision);
   const overlay = parseYaml(fs.readFileSync(provision[3], "utf8"));
   const kit = parseYaml(fs.readFileSync(path.join(overlay.kits[1], "spec.yaml"), "utf8"));
   assert.equal(kit.kind, "mixin");
@@ -732,6 +750,7 @@ test("native Codex import mounts only a temporary private copy and is creation-o
   });
   assert.equal(result.status, 0, result.stderr);
   const provision = f.calls().find((call) => call[0] === "env" && call[1] === "run");
+  assert.ok(provision);
   const content = fs.readFileSync(provision[3], "utf8");
   assert.equal(content.includes("private-token"), false);
   const mounts = parseYaml(content).additionalWorkspaces;
