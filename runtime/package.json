@@ -1,0 +1,12 @@
+{
+  "name": "sbx-kit-pi-runtime",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.4.0"
+  },
+  "overrides": {
+    "minimatch": "11.0.3",
+    "undici": "8.12.3"
+  }
+}

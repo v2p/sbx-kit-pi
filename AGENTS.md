@@ -6,6 +6,7 @@ This repository is `sbx-kit-pi`: a Docker Sandbox kit that launches the Pi codin
 
 - `spec.yaml` defines the sandbox kit: Pi entrypoint, OAuth credential binding, minimal network allowlist, runtime Pi safety environment, and custom sandbox image reference.
 - `Dockerfile` builds the custom sandbox image with Pi and bundled extensions under `/opt/sbx-kit-pi/extensions/`.
+- `runtime/package.json` and its lockfile define the image's production Pi install. Keep its Pi version and security overrides aligned with the root development package; the image uses modular `dist/cli.js`, not the prebuilt bundle.
 - `scripts/run` is the host launcher. It derives a workspace-specific sandbox/session name and runs or attaches via `sbx run`; Docker Sandbox pulls the published custom image.
 - `extensions/agents-postprocessor.ts` and `extensions/agents-classifier-output.ts` implement preprocessing for Docker Sandbox-generated `AGENTS.md` files and generated skills.
 - `tests/spec.test.mts` contains static tests for the kit contract.
@@ -36,5 +37,5 @@ This repository is `sbx-kit-pi`: a Docker Sandbox kit that launches the Pi codin
 - Do not write Pi user settings from the kit.
 - Use the kit's own semver (`package.json`) for the custom image tag; do not use Pi's version as the image tag.
 - Keep the default Docker Hub namespace configurable through `DOCKERHUB_USERNAME` in the Makefile, while `spec.yaml` references the concrete public image that Docker Sandbox can pull.
-- When changing Pi, update the Dockerfile `PI_AGENT_VERSION` build argument default. Bump the kit semver in `package.json`, `package-lock.json`, and the `spec.yaml` image tag for a release, then test fresh and existing-sandbox flows.
+- When changing Pi, update the Dockerfile `PI_AGENT_VERSION` build argument default and both package manifests/lockfiles. Security overrides must affect the modular runtime, not merely pass the checkout audit. Bump the kit semver in `package.json`, `package-lock.json`, and the `spec.yaml` image tag for a release, then test fresh and existing-sandbox flows.
 - Follow the parent Docker Sandbox guidance: never add shell completions to `/etc/sandbox-persistent.sh`.

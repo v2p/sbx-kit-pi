@@ -8,12 +8,20 @@ RUN node -e 'if (process.features.typescript !== "strip") process.exit(1)'
 
 ARG PI_AGENT_VERSION=1.4.0
 
-RUN npm install -g --ignore-scripts --no-audit --no-fund "@earendil-works/pi-coding-agent@${PI_AGENT_VERSION}" \
+COPY --chown=1000:1000 runtime/package.json runtime/package-lock.json /opt/sbx-kit-pi/runtime/
+# The locked project install applies the runtime manifest's security overrides.
+# Use modular JS so bundled copies cannot bypass them.
+RUN npm ci --prefix /opt/sbx-kit-pi/runtime --omit=dev --ignore-scripts --no-audit --no-fund \
+    && npm audit --prefix /opt/sbx-kit-pi/runtime --omit=dev --audit-level=moderate \
+    && node -e 'const fs = require("node:fs"); const file = "/opt/sbx-kit-pi/runtime/node_modules/@earendil-works/pi-coding-agent/package.json"; const pkg = JSON.parse(fs.readFileSync(file)); pkg.bin.pi = "dist/cli.js"; pkg.exports["./rpc-entry"].import = "./dist/rpc-entry.js"; fs.writeFileSync(file, JSON.stringify(pkg, null, 2));' \
+    && rm -rf /opt/sbx-kit-pi/runtime/node_modules/@earendil-works/pi-coding-agent/dist/bundle \
+    && ln -sfn ../@earendil-works/pi-coding-agent/dist/cli.js /opt/sbx-kit-pi/runtime/node_modules/.bin/pi \
+    && sudo ln -s /opt/sbx-kit-pi/runtime/node_modules/.bin/pi /usr/local/bin/pi \
     && test "$(pi --version)" = "$PI_AGENT_VERSION" \
     && npm cache clean --force
 
 COPY --chown=1000:1000 extensions/ /opt/sbx-kit-pi/extensions/
-COPY --chown=1000:1000 scripts/container-entrypoint scripts/import-codex-auth.mts scripts/host-rpc-protocol.mts scripts/runtime-validation.mts scripts/node-environment /opt/sbx-kit-pi/scripts/
+COPY --chown=1000:1000 scripts/container-entrypoint scripts/import-codex-auth.mts scripts/host-rpc-protocol.mts scripts/runtime-validation.mts scripts/node-environment scripts/check-pi-runtime.mts /opt/sbx-kit-pi/scripts/
 
 # Applies to Pi and subsequent Bash tool calls, preserving caller NODE_OPTIONS.
 RUN printf '\n. /opt/sbx-kit-pi/scripts/node-environment\n' | sudo tee -a /etc/sandbox-persistent.sh >/dev/null

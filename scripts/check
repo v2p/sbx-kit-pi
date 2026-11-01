@@ -8,7 +8,7 @@ source "$root/scripts/node-environment"
 printf '%s\n' '==> Installing test dependencies'
 npm ci --ignore-scripts --no-audit --no-fund
 
-printf '%s\n' '==> Auditing test dependencies'
+printf '%s\n' '==> Auditing development and runtime dependencies'
 npm run audit
 
 printf '%s\n' '==> Checking code formatting'

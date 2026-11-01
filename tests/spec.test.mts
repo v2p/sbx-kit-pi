@@ -15,7 +15,11 @@ const dockerfile = fs.readFileSync(path.join(root, "Dockerfile"), "utf8");
 const packageMetadata = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
   version: string;
   devDependencies: Record<string, string>;
+  overrides: Record<string, string>;
 };
+const runtimeMetadata = JSON.parse(
+  fs.readFileSync(path.join(root, "runtime/package.json"), "utf8"),
+);
 const spec = YAML.parse(source);
 
 function credential() {
@@ -44,9 +48,24 @@ test("uses tier-agnostic OpenAI Codex naming and provider configuration", () => 
   ]);
 });
 
-test("uses the same Pi version for tests and the sandbox image", () => {
+test("keeps Pi and its security overrides aligned between tests and the image", () => {
   const imageVersion = dockerfile.match(/^ARG PI_AGENT_VERSION=(.+)$/m)?.[1];
   assert.equal(imageVersion, packageMetadata.devDependencies["@earendil-works/pi-coding-agent"]);
+  assert.equal(imageVersion, runtimeMetadata.dependencies["@earendil-works/pi-coding-agent"]);
+  assert.deepEqual(runtimeMetadata.overrides, packageMetadata.overrides);
+});
+
+test("Pi's modular runtime uses patched dependencies for model globs and HTTP", () => {
+  const result = spawnSync(
+    process.execPath,
+    [path.join(root, "scripts/check-pi-runtime.mts"), root],
+    {
+      encoding: "utf8",
+      timeout: 30_000,
+    },
+  );
+  assert.equal(result.status, 0, `${result.error ?? ""}\n${result.stderr}`);
+  assert.match(result.stdout, /Pi runtime:.*OK/);
 });
 
 test("reports detailed usage after each interactive LLM turn", () => {

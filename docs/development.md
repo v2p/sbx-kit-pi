@@ -51,8 +51,11 @@ make publish DOCKERHUB_USERNAME=another-user
 also requires changing that reference.
 
 Image tags follow this kit's semver, independently of Pi's version. To upgrade
-Pi, change the Dockerfile `PI_AGENT_VERSION` default. For a release, bump the
-version in `package.json`, `package-lock.json`, and the `spec.yaml` image tag;
+Pi, update the Dockerfile `PI_AGENT_VERSION` default and Pi dependencies in both
+`package.json` and `runtime/package.json`, then regenerate both lockfiles with
+`npm install --ignore-scripts` and `npm --prefix runtime install --package-lock-only --ignore-scripts`.
+For a release, bump the version in `package.json`, `package-lock.json`, and the
+`spec.yaml` image tag;
 rebuild and test both a fresh sandbox and recreation of an existing one.
 
 Publish the versioned image before recreating the sandbox. Recreation discards
@@ -60,11 +63,22 @@ sandbox-local changes; save them first. See the [recreation workflow](../README.
 
 ## Dependency audit
 
-Publishing is blocked by advisories in Pi's pinned `undici@8.10.2` and
-`minimatch@10.2.6` dependencies. Although Pi is a dev dependency in this checkout,
-it is installed in the sandbox image. Keep the full audit gate and resolve these
-pins before publishing; the clean host production-only audit is not sufficient.
-Do not use `npm audit fix --force` to downgrade unrelated tooling.
+`npm run audit` checks both the development and production runtime lockfiles.
+The image installs `runtime/` with `npm ci --omit=dev --ignore-scripts` and audits
+that installation too. Keep these gates; do not use `npm audit fix --force`.
+
+Both manifests override `undici` to **8.12.3** and `minimatch` to **11.0.3** to fix
+[Undici's advisories](https://github.com/nodejs/undici/security/advisories) and
+[GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+The Minimatch override crosses a major version; tests exercise Pi's model glob
+matching, and lint runs against the same override. Keep the pins aligned (tested)
+and review them when upgrading Pi.
+
+The image's `pi` command points at modular `dist/cli.js`; the prebuilt bundle is
+removed because its embedded dependencies bypass npm overrides. Smoke tests check
+the entrypoint, resolved dependency versions, model globs, compressed HTTP through
+Pi's dispatcher, and extension loading. Auditing only the host production
+packages is insufficient: Pi is a dev dependency here but runs in the image.
 
 ## Code style
 

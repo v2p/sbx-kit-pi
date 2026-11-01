@@ -1,5 +1,12 @@
 # Runtime behavior
 
+## Pi installation
+
+The image installs the locked production dependencies from `runtime/` under
+`/opt/sbx-kit-pi/runtime/`. The `pi` command uses the modular `dist/cli.js` entrypoint
+with the kit's security overrides. The prebuilt CLI bundle is removed so it cannot
+load embedded, unpatched dependencies.
+
 ## Node proxy warning
 
 The launcher and sandbox Bash environment suppress only Node's `UNDICI-EHPA`
