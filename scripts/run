@@ -333,12 +333,11 @@ if [[ $environment_mode == native ]]; then
     node "$kit_dir/scripts/launcher-config.mts" record "$config_file"
   fi
   # env run has no agent-argument passthrough. env exec keeps Docker's environment
-  # resolution while allowing Pi arguments, using the kit's actual entrypoint.
-  node "$kit_dir/scripts/launcher-config.mts" entrypoint > "$protocol_file"
-  mapfile -d '' -t entrypoint < "$protocol_file"
+  # resolution while allowing Pi arguments. The image and native exec both use
+  # this wrapper, which owns the provider, model, and bundled extension defaults.
   terminal_args=(-i)
   if [[ -t 0 && -t 1 ]]; then terminal_args+=(-t); fi
-  sbx env exec "${terminal_args[@]}" "${environment_paths[@]}" "${native_args[@]}" -- "${entrypoint[@]}" "${pi_args[@]}"
+  sbx env exec "${terminal_args[@]}" "${environment_paths[@]}" "${native_args[@]}" -- /opt/sbx-kit-pi/scripts/container-entrypoint "${pi_args[@]}"
   exit
 fi
 
@@ -363,7 +362,7 @@ else
   printf '  (none)\n'
 fi
 
-kit_args=(--kit "$kit_dir")
+kit_args=()
 for kit in "${additional_kits[@]}"; do
   kit_args+=(--kit "$kit")
 done
@@ -380,7 +379,7 @@ fi
 sbx run \
   --name "$sandbox_name" \
   "${kit_args[@]}" \
-  pi-openai-codex \
+  "$kit_dir" \
   "$workspace" \
   "${volume_args[@]}" \
   -- "${pi_args[@]}"

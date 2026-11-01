@@ -22,19 +22,44 @@ const runtimeMetadata = JSON.parse(
 );
 const spec = YAML.parse(source);
 
-function credential() {
-  assert.equal(spec.credentials.length, 1, "the kit should expose one credential binding");
-  return spec.credentials[0];
+function capability(name: string) {
+  const entries = spec.capabilities.filter(
+    (entry: { type: string }) => entry.type === `com.docker.sandbox/${name}@1`,
+  );
+  assert.equal(entries.length, 1, `the kit should declare one ${name} capability`);
+  return entries[0];
 }
 
-test("uses tier-agnostic OpenAI Codex naming and provider configuration", () => {
-  assert.equal(spec.schemaVersion, "2");
-  assert.equal(spec.kind, "sandbox");
-  assert.equal(spec.name, "pi-openai-codex");
+test("uses a v3 workload with tier-agnostic OpenAI Codex naming", () => {
+  assert.equal(spec.schemaVersion, "3");
+  assert.equal(spec.kind, "workload");
+  assert.equal(capability("sbx").config, undefined);
   assert.equal(spec.displayName, "Pi (OpenAI Codex)");
   assert.doesNotMatch(source, /ChatGPT (?:Plus|Pro)/i);
-  assert.deepEqual(spec.sandbox.entrypoint, [
-    "/opt/sbx-kit-pi/scripts/container-entrypoint",
+});
+
+test("the image entrypoint applies Pi defaults and preserves caller overrides", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-pi-entrypoint-"));
+  let result;
+  try {
+    fs.writeFileSync(
+      path.join(directory, "pi"),
+      "#!/usr/bin/env node\nconsole.log(JSON.stringify(process.argv.slice(2)))\n",
+      { mode: 0o755 },
+    );
+    result = spawnSync(
+      path.join(root, "scripts/container-entrypoint"),
+      ["--model", "custom-model", "prompt with spaces"],
+      {
+        env: { ...process.env, PATH: `${directory}:${process.env.PATH}` },
+        encoding: "utf8",
+      },
+    );
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), [
     "--provider",
     "openai-codex",
     "--model",
@@ -45,6 +70,9 @@ test("uses tier-agnostic OpenAI Codex naming and provider configuration", () => 
     "/opt/sbx-kit-pi/extensions/host-rpc.ts",
     "--extension",
     "/opt/sbx-kit-pi/extensions/token-usage.ts",
+    "--model",
+    "custom-model",
+    "prompt with spaces",
   ]);
 });
 
@@ -107,18 +135,21 @@ test("reports detailed usage after each interactive LLM turn", () => {
 
 test("adds only concise, environment-specific agent instructions", () => {
   assert.equal(
-    spec.agentInstructions.content.trim(),
+    capability("agent-context").config.content.trim(),
     "This is a Docker Sandbox with Docker access and passwordless sudo.",
   );
 });
 
 test("keeps the network allowlist minimal and explicit", () => {
-  assert.deepEqual(spec.permissions.network.allow, ["auth.openai.com", "chatgpt.com"]);
+  assert.deepEqual(capability("network-policy").config, {
+    runtime: { allow: ["auth.openai.com", "chatgpt.com"] },
+  });
 });
 
 test("keeps the OAuth binding and protected credential file intact", () => {
-  const binding = credential();
+  const binding = capability("credential").config;
   assert.equal(binding.service, "openai-codex");
+  assert.equal(binding.phase, "runtime");
   assert.equal(binding.oauth.passthrough, true);
   assert.deepEqual(binding.oauth.tokenEndpoint, {
     host: "auth.openai.com",
@@ -128,7 +159,6 @@ test("keeps the OAuth binding and protected credential file intact", () => {
     accessToken: "access_token",
     refreshToken: "refresh_token",
     expiresIn: "expires_in",
-    scope: "scope",
   });
   assert.equal(binding.oauth.credentialFile.path, "~/.pi/agent/auth.json");
   assert.deepEqual(binding.oauth.credentialFile.structure, {
@@ -142,14 +172,22 @@ test("keeps the OAuth binding and protected credential file intact", () => {
 });
 
 test("disables update checks and telemetry at runtime", () => {
-  assert.deepEqual(spec.environment.variables, {
-    PI_SKIP_VERSION_CHECK: "1",
-    PI_TELEMETRY: "0",
-  });
+  assert.match(dockerfile, /ENV PI_SKIP_VERSION_CHECK=1 \\\n {4}PI_TELEMETRY=0/);
+  assert.match(dockerfile, /ENTRYPOINT \["\/opt\/sbx-kit-pi\/scripts\/container-entrypoint"\]/);
+  assert.match(dockerfile, /^CMD \[\]$/m);
 });
 
 test("uses the kit semver for the custom image with no runtime setup install step", () => {
-  assert.equal(spec.sandbox.image, `docker.io/vposvistelik/sbx-kit-pi:${packageMetadata.version}`);
+  assert.equal(
+    spec.build.trim(),
+    `FROM docker.io/vposvistelik/sbx-kit-pi:${packageMetadata.version}`,
+  );
+  assert.equal(
+    spec.capabilities.some(
+      (entry: { type: string }) => entry.type === "com.docker.sandbox/lifecycle@1",
+    ),
+    false,
+  );
   assert.equal(spec.setup, undefined);
 });
 
@@ -306,9 +344,7 @@ test("host launcher stages Codex credentials only while creating a sandbox", () 
         "run",
         "--name",
         sandboxName,
-        "--kit",
         root,
-        "pi-openai-codex",
         workspace,
         sessionDir,
         importDir,
@@ -521,12 +557,10 @@ test("host launcher recreates the current workspace sandbox with selected mixins
         "--name",
         sandboxName,
         "--kit",
-        root,
-        "--kit",
         "docker.io/acme/java-kit:1.1",
         "--kit",
         "./sandbox-kits/project-tools",
-        "pi-openai-codex",
+        root,
         workspace,
         sessionDir,
         "--",

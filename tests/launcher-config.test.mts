@@ -309,7 +309,7 @@ test("init creates a native environment in the current directory without inherit
   const content = fs.readFileSync(file, "utf8");
   assert.deepEqual(parseYaml(content), {
     schemaVersion: "1",
-    agent: "pi-openai-codex",
+    agent: path.basename(root),
     workspace: ".",
     kits: [],
   });
@@ -349,7 +349,7 @@ test("init expands aliases and serializes portable kit references that round-tri
     { ...config },
     {
       schemaVersion: "1",
-      agent: "pi-openai-codex",
+      agent: path.basename(root),
       workspace: ".",
       kits: ["docker.io/acme/node:1", './kits/tools "quoted"', remote, "./kits/project"],
     },
@@ -503,12 +503,11 @@ test("tracks applied kits, warns on drift, and recreates using the persisted man
   const create = f.calls().find((call) => call[0] === "run");
   assert.ok(create);
   assert.ok(create.includes(f.workspace));
-  assert.deepEqual(create.slice(create.indexOf("--kit"), create.indexOf("pi-openai-codex")), [
-    "--kit",
-    root,
+  assert.deepEqual(create.slice(create.indexOf("--kit"), create.indexOf(root)), [
     "--kit",
     "docker.io/acme/node:1",
   ]);
+  assert.equal(create[create.indexOf(root) + 1], f.workspace);
   assert.equal(f.status().status, "current");
   fs.appendFileSync(f.manifest, "\n# A comment does not require recreation\n");
   assert.equal(f.status().status, "current");
@@ -557,7 +556,7 @@ test("native YAML owns sandbox settings while TOML supplies only Pi preferences"
   const environment = path.join(f.workspace, "sbxenv.yaml");
   const source = `schemaVersion: "1"
 name: native-project
-agent: pi-openai-codex
+agent: ${path.basename(root)}
 workspace:
   path: ./src
   clone: true
@@ -632,7 +631,9 @@ test("explicit native layers and arguments are passed to Docker without local ex
   const argsFile = path.join(f.subdir, "environment.args");
   fs.writeFileSync(
     base,
-    'schemaVersion: "1"\nagent: pi-openai-codex\nworkspace: "${{ env.projectDir }}/src"\n',
+    'schemaVersion: "1"\nagent: ' +
+      path.basename(root) +
+      '\nworkspace: "${{ env.projectDir }}/src"\n',
   );
   fs.writeFileSync(local, 'name: "${{ env.args.name }}"\nargs:\n  name:\n    required: true\n');
   fs.writeFileSync(argsFile, "name=custom\n");
@@ -680,7 +681,7 @@ test("native plan delegates to Docker without starting Pi or creating session di
   const overlay = parseYaml(fs.readFileSync(f.calls()[0][3], "utf8"));
   assert.equal(overlay.workspace, undefined, "native workspace omission must remain mountless");
   assert.match(overlay.name, /^pi-openai-codex-project-/);
-  assert.equal(overlay.agent, "pi-openai-codex");
+  assert.equal(overlay.agent, path.basename(root));
 });
 
 test("native recreation delegates resource cleanup and does not attach after provisioning fails", (t) => {
@@ -716,7 +717,16 @@ test("supplemental allowed hosts become sandbox-only permissions and require rec
   const overlay = parseYaml(fs.readFileSync(provision[3], "utf8"));
   const kit = parseYaml(fs.readFileSync(path.join(overlay.kits[1], "spec.yaml"), "utf8"));
   assert.equal(kit.kind, "mixin");
-  assert.deepEqual(kit.permissions.network.allow, ["api.github.com", "registry.npmjs.org"]);
+  assert.equal(kit.schemaVersion, "3");
+  assert.deepEqual(kit.capabilities, [
+    {
+      type: "com.docker.sandbox/network-policy@1",
+      config: {
+        install: { allow: ["api.github.com", "registry.npmjs.org"] },
+        runtime: { allow: ["api.github.com", "registry.npmjs.org"] },
+      },
+    },
+  ]);
   assert.equal(kit.setup, undefined);
   assert.equal(
     f.calls().some((call) => call[0] === "policy"),
@@ -730,7 +740,10 @@ test("supplemental allowed hosts become sandbox-only permissions and require rec
   const recreated = f.run(["--recreate"]);
   assert.equal(recreated.status, 0, recreated.stderr);
   const current = parseYaml(fs.readFileSync(path.join(overlay.kits[1], "spec.yaml"), "utf8"));
-  assert.deepEqual(current.permissions.network.allow, ["other.example"]);
+  assert.deepEqual(current.capabilities[0].config, {
+    install: { allow: ["other.example"] },
+    runtime: { allow: ["other.example"] },
+  });
   fs.writeFileSync(f.manifest, 'schema_version = 1\n[network]\nallow = "invalid"');
   assert.equal(f.run().status, 2);
 });
@@ -766,7 +779,7 @@ test("native Codex import mounts only a temporary private copy and is creation-o
 test("native projects reject duplicate sandbox configuration and unsupported agents before Docker", (t) => {
   const f = fixture(t);
   const environment = path.join(f.workspace, "sbxenv.yaml");
-  fs.writeFileSync(environment, 'schemaVersion: "1"\nagent: pi-openai-codex\n');
+  fs.writeFileSync(environment, `schemaVersion: "1"\nagent: ${path.basename(root)}\n`);
   fs.writeFileSync(f.manifest, "schema_version = 1\nkits = []");
   assert.match(f.run().stderr, /configure kits in YAML/);
   fs.writeFileSync(f.manifest, "schema_version = 1");

@@ -4,8 +4,8 @@ This repository is `sbx-kit-pi`: a Docker Sandbox kit that launches the Pi codin
 
 ## Key files
 
-- `spec.yaml` defines the sandbox kit: Pi entrypoint, OAuth credential binding, minimal network allowlist, runtime Pi safety environment, and custom sandbox image reference.
-- `Dockerfile` builds the custom sandbox image with Pi and bundled extensions under `/opt/sbx-kit-pi/extensions/`.
+- `spec.yaml` defines the v3 workload kit: OAuth, network, agent-context, and sbx capabilities, plus an inline build using the published custom sandbox image. Workload identity comes from its consumption reference; local launches use the checkout directory name.
+- `Dockerfile` builds the custom sandbox image with Pi and bundled extensions under `/opt/sbx-kit-pi/extensions/`, runtime safety environment, and the `scripts/container-entrypoint` launch command. The entrypoint owns the provider, model, and extension defaults.
 - `runtime/package.json` and its lockfile define the image's production Pi install. Keep its Pi version and security overrides aligned with the root development package; the image uses modular `dist/cli.js`, not the prebuilt bundle.
 - `scripts/run` is the host launcher. It derives a workspace-specific sandbox/session name and runs or attaches via `sbx run`; Docker Sandbox pulls the published custom image.
 - `extensions/agents-postprocessor.ts` and `extensions/agents-classifier-output.ts` implement preprocessing for Docker Sandbox-generated `AGENTS.md` files and generated skills.
@@ -26,7 +26,7 @@ This repository is `sbx-kit-pi`: a Docker Sandbox kit that launches the Pi codin
 - Run `npm test` for static tests and `npm run typecheck` for strict checking of scripts, extensions, and tests.
 - Run `./scripts/check` to install locked dependencies, audit, format-check, lint, type-check, test, build and smoke-test the custom image when Docker is available, and run `sbx kit validate --offline .` when `sbx` is available.
 - Use `make image` for a local image build plus smoke test and `make publish` for a release push.
-- Target Docker Sandboxes 0.50.0+.
+- Target Docker Sandboxes 0.50.0+. Use v3 workload/mixin manifests together; native environment files remain schema v1.
 - Run `sbx kit validate --offline .` when changing `spec.yaml`; also test host policy/approval and fresh/existing-sandbox flows before release.
 - Keep tests focused on observable kit contracts and safety invariants. Do not add tests that mirror arbitrary file contents or implementation details; they are brittle and mostly catch intentional refactors rather than user-visible regressions.
 

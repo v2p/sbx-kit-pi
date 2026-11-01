@@ -9,7 +9,7 @@ type EnvironmentMetadata = Partial<Record<"schemaVersion" | "agent" | "name", un
 
 // Inspect only the fields the launcher needs. Docker owns validation, merging,
 // argument expansion, path resolution, approval, and provisioning.
-export function inspectEnvironment(files: string[]): EnvironmentMetadata {
+export function inspectEnvironment(files: string[], agent: string): EnvironmentMetadata {
   const result: EnvironmentMetadata = {};
   for (const file of files) {
     let value: unknown;
@@ -27,17 +27,17 @@ export function inspectEnvironment(files: string[]): EnvironmentMetadata {
       }
     }
   }
-  if (result.agent !== undefined && result.agent !== "pi-openai-codex") {
-    throw new Error("sbx-pi requires agent: pi-openai-codex; use sbx env for other agents");
+  if (result.agent !== undefined && result.agent !== agent) {
+    throw new Error(`sbx-pi requires agent: ${agent}; use sbx env for other agents`);
   }
   return result;
 }
 
-function writePrivateYaml(file: string, value: unknown): void {
+function writePrivateYaml(file: string, value: unknown, header = ""): void {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const temporary = `${file}.${randomUUID()}.tmp`;
   try {
-    fs.writeFileSync(temporary, stringify(value), { flag: "wx", mode: 0o600 });
+    fs.writeFileSync(temporary, header + stringify(value), { flag: "wx", mode: 0o600 });
     fs.renameSync(temporary, file);
   } finally {
     fs.rmSync(temporary, { force: true });
@@ -49,12 +49,23 @@ export function writeNetworkKit(config: ResolvedConfig, directory: string): stri
     return null;
   }
   const kit = path.join(directory, "network-kit");
-  writePrivateYaml(path.join(kit, "spec.yaml"), {
-    schemaVersion: "2",
-    kind: "mixin",
-    name: "sbx-pi-network",
-    permissions: { network: { allow: config.networkAllow } },
-  });
+  writePrivateYaml(
+    path.join(kit, "spec.yaml"),
+    {
+      schemaVersion: "3",
+      kind: "mixin",
+      capabilities: [
+        {
+          type: "com.docker.sandbox/network-policy@1",
+          config: {
+            install: { allow: config.networkAllow },
+            runtime: { allow: config.networkAllow },
+          },
+        },
+      ],
+    },
+    "# syntax=docker/sandbox-kit:3\n",
+  );
   return kit;
 }
 
@@ -64,7 +75,8 @@ export function writeEnvironmentOverlay(
   sessionDir: string,
   importDir: string | null,
 ): string {
-  const metadata = inspectEnvironment(config.environmentFiles);
+  const agent = path.basename(config.baseKitDirectory);
+  const metadata = inspectEnvironment(config.environmentFiles, agent);
   const overlay: {
     agent: string;
     kits: string[];
@@ -72,7 +84,7 @@ export function writeEnvironmentOverlay(
     schemaVersion?: string;
     name?: string | null;
   } = {
-    agent: "pi-openai-codex",
+    agent,
     kits: [config.baseKitDirectory],
     additionalWorkspaces: [{ path: sessionDir }],
   };
@@ -98,23 +110,10 @@ export function writeEnvironmentOverlay(
   return file;
 }
 
-export function kitEntrypoint(root: string): string[] {
-  const spec: unknown = parse(fs.readFileSync(path.join(root, "spec.yaml"), "utf8"));
-  if (
-    !isObject(spec) ||
-    !isObject(spec.sandbox) ||
-    !Array.isArray(spec.sandbox.entrypoint) ||
-    !spec.sandbox.entrypoint.every((arg: unknown) => typeof arg === "string")
-  ) {
-    throw new Error("Kit sandbox.entrypoint must be a string array");
-  }
-  return spec.sandbox.entrypoint;
-}
-
-export function initializeEnvironment(file: string, kits: string[]): string {
+export function initializeEnvironment(file: string, kits: string[], agent: string): string {
   const content =
     "# Docker Sandbox settings. sbx-pi adds its Pi kit and persistent session mount.\n" +
-    stringify({ schemaVersion: "1", agent: "pi-openai-codex", workspace: ".", kits });
+    stringify({ schemaVersion: "1", agent, workspace: ".", kits });
   try {
     fs.writeFileSync(file, content, { flag: "wx", mode: 0o644 });
   } catch (error) {

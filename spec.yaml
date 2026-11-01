@@ -1,58 +1,44 @@
-schemaVersion: "2"
-kind: sandbox
-name: pi-openai-codex
+# syntax=docker/sandbox-kit:3
+schemaVersion: "3"
+kind: workload
 displayName: Pi (OpenAI Codex)
 description: Pi coding agent configured for OpenAI Codex OAuth
 
-sandbox:
-  image: docker.io/vposvistelik/sbx-kit-pi:0.6.1
-  entrypoint:
-    - /opt/sbx-kit-pi/scripts/container-entrypoint
-    - --provider
-    - openai-codex
-    - --model
-    - gpt-6.1-sol
-    - --extension
-    - /opt/sbx-kit-pi/extensions/agents-postprocessor.ts
-    - --extension
-    - /opt/sbx-kit-pi/extensions/host-rpc.ts
-    - --extension
-    - /opt/sbx-kit-pi/extensions/token-usage.ts
+build: |
+  FROM docker.io/vposvistelik/sbx-kit-pi:0.7.0
 
-agentInstructions:
-  filename: AGENTS.md
-  content: |
-    This is a Docker Sandbox with Docker access and passwordless sudo.
-
-permissions:
-  network:
-    allow:
-      - auth.openai.com
-      - chatgpt.com
-
-credentials:
-  - service: openai-codex
+capabilities:
+  - type: com.docker.sandbox/sbx@1
+  - type: com.docker.sandbox/agent-context@1
+    config:
+      filename: AGENTS.md
+      content: |
+        This is a Docker Sandbox with Docker access and passwordless sudo.
+  - type: com.docker.sandbox/network-policy@1
+    config:
+      runtime:
+        allow:
+          - auth.openai.com
+          - chatgpt.com
+  - type: com.docker.sandbox/credential@1
     description: OAuth credentials used by Pi's OpenAI Codex provider
-    oauth:
-      tokenEndpoint:
-        host: auth.openai.com
-        path: /oauth/token
-      credentialFile:
-        path: "~/.pi/agent/auth.json"
-        structure:
-          openai-codex:
-            type: oauth
-            access: "{{.AccessToken}}"
-            refresh: "{{.RefreshToken}}"
-            expires: "{{.ExpiresAt}}"
-      responseFields:
-        accessToken: access_token
-        refreshToken: refresh_token
-        expiresIn: expires_in
-        scope: scope
-      passthrough: true
-
-environment:
-  variables:
-    PI_SKIP_VERSION_CHECK: "1"
-    PI_TELEMETRY: "0"
+    config:
+      service: openai-codex
+      phase: runtime
+      oauth:
+        tokenEndpoint:
+          host: auth.openai.com
+          path: /oauth/token
+        credentialFile:
+          path: "~/.pi/agent/auth.json"
+          structure:
+            openai-codex:
+              type: oauth
+              access: "{{.AccessToken}}"
+              refresh: "{{.RefreshToken}}"
+              expires: "{{.ExpiresAt}}"
+        responseFields:
+          accessToken: access_token
+          refreshToken: refresh_token
+          expiresIn: expires_in
+        passthrough: true

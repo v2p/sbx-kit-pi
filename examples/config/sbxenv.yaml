@@ -1,11 +1,12 @@
 # Copy to your project configuration directory and launch with sbx-pi.
 # Keep this file outside writable workspace trees when practical.
 schemaVersion: "1"
-agent: pi-openai-codex
+# V3 workload identity: must match the sbx-kit-pi checkout directory name.
+agent: sbx-kit-pi
 workspace: .
 
 # sbx-pi adds its Pi kit and persistent session mount automatically.
-# Replace placeholders with reviewed, available kits before running.
+# Replace placeholders with reviewed, available v3 mixins before running.
 kits:
   - docker.io/acme/node-kit:1.2.0
   - ./sandbox-kits/project-tools

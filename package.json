@@ -1,6 +1,6 @@
 {
   "name": "sbx-kit-pi",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "Validation tests for the Pi OpenAI Codex Docker Sandbox kit",

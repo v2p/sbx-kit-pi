@@ -99,7 +99,8 @@ Use Docker's native [sandbox environment file](https://docs.docker.com/ai/sandbo
 for everything it supports: kits, workspaces, read-only mounts, environment
 variables, ports, resources, credentials, MCP, and host lifecycle commands.
 `sbx env` is experimental. The launcher uses `run --detach` and `exec` with
-environment arguments. Use schema-v2 mixins with this kit.
+environment arguments. This kit uses Docker's v3 workload manifest; add only
+schema-v3 mixins. V2 kits cannot be combined with it.
 
 From your project configuration directory:
 
@@ -111,7 +112,7 @@ This creates and displays **`sbxenv.yaml`**, without Docker or an automatic laun
 
 ```yaml
 schemaVersion: "1"
-agent: pi-openai-codex
+agent: sbx-kit-pi
 workspace: .
 kits:
   - docker.io/acme/node-kit:1.2.0
@@ -144,16 +145,19 @@ the launcher does not flatten YAML into CLI flags. It adds a stable, private YAM
 layer outside the workspace containing its Pi kit and persistent session mount.
 Only missing `agent` and `name` values receive launcher defaults. Omitting
 `workspace` retains Docker's mountless behavior.
-The agent must be `pi-openai-codex`; use `sbx env` directly for other agents.
+The agent must match this checkout's directory name (`sbx-kit-pi` by default);
+v3 workload identity comes from its reference, not a manifest `name`. `init`
+uses that name automatically. Use `sbx env` directly for other agents.
+Environment files still use `schemaVersion: "1"`; only kit manifests use v3.
 
-| Option | Effect |
-| --- | --- |
-| `--env PATH` | Select native YAML or its directory; repeat for ordered layers. |
-| `--env-arg NAME=VALUE` | Forward a declared environment argument to Docker. |
-| `--env-args-file PATH` | Forward an argument file; repeat as needed. |
-| `--config PATH` | Select Pi TOML and its sibling `sbxenv.yaml`. |
-| `--no-config` | Disable project discovery; retain the legacy current-directory launch. |
-| `--allow-host HOST` | Replace supplemental allowed hosts; repeat for multiple hosts. |
+| Option                 | Effect                                                                 |
+| ---------------------- | ---------------------------------------------------------------------- |
+| `--env PATH`           | Select native YAML or its directory; repeat for ordered layers.        |
+| `--env-arg NAME=VALUE` | Forward a declared environment argument to Docker.                     |
+| `--env-args-file PATH` | Forward an argument file; repeat as needed.                            |
+| `--config PATH`        | Select Pi TOML and its sibling `sbxenv.yaml`.                          |
+| `--no-config`          | Disable project discovery; retain the legacy current-directory launch. |
+| `--allow-host HOST`    | Replace supplemental allowed hosts; repeat for multiple hosts.         |
 
 `--env` and `--config` cannot be combined, nor combined with `--no-config`.
 With explicit YAML layers, Pi TOML is loaded beside the first layer. As with native

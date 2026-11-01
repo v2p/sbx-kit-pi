@@ -44,4 +44,10 @@ if [[ -n $import_path ]]; then
   trap - EXIT
 fi
 
-exec pi "${pi_args[@]}"
+exec pi \
+  --provider openai-codex \
+  --model gpt-6.1-sol \
+  --extension /opt/sbx-kit-pi/extensions/agents-postprocessor.ts \
+  --extension /opt/sbx-kit-pi/extensions/host-rpc.ts \
+  --extension /opt/sbx-kit-pi/extensions/token-usage.ts \
+  "${pi_args[@]}"

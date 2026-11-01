@@ -8,6 +8,11 @@ RUN node -e 'if (process.features.typescript !== "strip") process.exit(1)'
 
 ARG PI_AGENT_VERSION=1.4.0
 
+ENV PI_SKIP_VERSION_CHECK=1 \
+    PI_TELEMETRY=0
+ENTRYPOINT ["/opt/sbx-kit-pi/scripts/container-entrypoint"]
+CMD []
+
 COPY --chown=1000:1000 runtime/package.json runtime/package-lock.json /opt/sbx-kit-pi/runtime/
 # The locked project install applies the runtime manifest's security overrides.
 # Use modular JS so bundled copies cannot bypass them.

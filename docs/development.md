@@ -18,8 +18,9 @@ npm run format:check
 ```
 
 Run the complete check with `./scripts/check`. It installs dependencies, audits,
-checks formatting/lint and types, runs tests, builds and smoke-tests the image when Docker
-is available, and runs `sbx kit validate --offline .` when `sbx` is available. Run skipped
+checks formatting/lint and types, runs tests, builds and smoke-tests the image and
+builds the v3 workload/example descriptors when Docker is available, and runs
+`sbx kit validate --offline` on both kits when `sbx` is available. Run skipped
 checks on a Docker Sandbox host. Offline validation does not start the daemon or
 require sign-in; it does not check host source or signature policies.
 For a quick iteration use `npm test`; audit separately with `npm run audit`.
@@ -48,7 +49,25 @@ make publish DOCKERHUB_USERNAME=another-user
 
 `spec.yaml` references the concrete public image
 `docker.io/vposvistelik/sbx-kit-pi:<kit-version>`. Changing the publishing namespace
-also requires changing that reference.
+also requires changing that reference in the v3 descriptor's inline `build`.
+The Dockerfile publishes the runtime base image; Docker Sandbox builds the
+v3 workload wrapper from `spec.yaml`. Launch configuration (`ENTRYPOINT`,
+`CMD`, and safety environment) belongs to the image. The entrypoint owns Pi's
+provider, model, and extension defaults so native `env exec` uses the same
+command as direct launches.
+
+Validate the workload and bundled mixin with:
+
+```console
+sbx kit validate --offline .
+sbx kit validate --offline examples/mixins/project-bootstrap
+```
+
+Fresh creation must use the local workload reference, not a built-in v2 agent
+shortcut. In native environments, `agent` matches the checkout directory name.
+Review the host's approval plan for the runtime-only OAuth binding and minimal
+network grant, then test fresh login, existing-sandbox attachment, and explicit
+recreation with v3 mixins. Save sandbox-local work before recreation.
 
 Image tags follow this kit's semver, independently of Pi's version. To upgrade
 Pi, update the Dockerfile `PI_AGENT_VERSION` default and Pi dependencies in both

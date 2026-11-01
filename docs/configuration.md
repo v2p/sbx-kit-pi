@@ -19,7 +19,9 @@ session persistence and the default sandbox name. It need not be the mounted
 workspace: Docker owns `workspace`, clone mode, additional mounts, and their
 path resolution. Existing YAML names are honored, including expressions resolved
 by Docker. Parameterized agent selection is not supported: this launcher requires
-`pi-openai-codex` (or an omitted agent, which it supplies).
+the checkout directory's name (`sbx-kit-pi` by default), or an omitted agent,
+which it supplies. The private layer includes this checkout as the v3 workload;
+all additional kits must be v3 mixins. Environment files remain schema v1.
 
 The launcher appends a stable private YAML layer under
 `$XDG_STATE_HOME/sbx-pi/sandboxes/` (default `~/.local/state/sbx-pi/sandboxes/`).
@@ -67,8 +69,9 @@ allow = ["api.github.com", "registry.npmjs.org"]
 
 `--allow-host HOST` replaces the TOML list for that launch; repeat for several
 hosts. With an existing literal-name sandbox, explicit overrides require
-`--recreate`. These references become a generated schema-v2 permission-only
-mixin, scoped to the sandbox rather than global policy. Docker still enforces
+`--recreate`. These references become a generated schema-v3 network-policy
+mixin, granting the listed hosts during both installation and runtime, scoped
+to the sandbox rather than global policy. Docker still enforces
 deny rules and organization governance. Removing a host requires recreation;
 removing the list does not remove the base kit's OAuth hosts or permissions from
 other kits. The launcher warns when recorded Pi-kit/network settings differ.

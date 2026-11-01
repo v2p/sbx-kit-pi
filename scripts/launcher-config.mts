@@ -10,7 +10,6 @@ import {
   inspectEnvironment,
   writeEnvironmentOverlay,
   initializeEnvironment,
-  kitEntrypoint,
   writeNetworkKit,
 } from "./launcher-environment.mts";
 
@@ -279,7 +278,9 @@ function resolve(args: string[], initialize = false): ResolvedConfig {
   const global: Partial<Preferences> = fs.existsSync(globalFile) ? load(globalFile, true) : {};
   const project: Partial<Preferences> = projectFile ? load(projectFile) : {};
   const workspace = fs.realpathSync(projectDirectory);
-  const environment = environmentFiles.length ? inspectEnvironment(environmentFiles) : null;
+  const environment = environmentFiles.length
+    ? inspectEnvironment(environmentFiles, path.basename(root))
+    : null;
   const networkAllow = cliHosts ?? project.network?.allow ?? [];
   if (!environment && nativeArguments.length) {
     throw new Error("Environment arguments require sbxenv.yaml or --env");
@@ -375,7 +376,7 @@ function initializeProject(args: string[]): void {
     }
     return `./${relative.split(path.sep).join("/")}`;
   });
-  const content = initializeEnvironment(file, kits);
+  const content = initializeEnvironment(file, kits, path.basename(root));
   console.log(`Created ${file}\n\n${content}`);
 }
 
@@ -393,9 +394,7 @@ function applied(config: ResolvedConfig): AppliedConfig | null {
 
 try {
   const [command, ...args] = process.argv.slice(2);
-  if (command === "entrypoint") {
-    process.stdout.write(kitEntrypoint(root).join("\0") + "\0");
-  } else if (command === "alias") {
+  if (command === "alias") {
     createAlias(args);
   } else if (command === "init") {
     initializeProject(args);
