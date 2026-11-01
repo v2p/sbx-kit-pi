@@ -326,7 +326,7 @@ function resolve(args: string[], initialize = false): ResolvedConfig {
       : typeof environment.name === "string" && !environment.name.includes("${{")
         ? string(environment.name, "Environment name")
         : null;
-  const baseKitFingerprint = hash(fs.readFileSync(path.join(root, "spec.yaml")));
+  const baseKitFingerprint = hash(fs.readFileSync(path.join(root, "sbx-kit-pi.yaml")));
   const fingerprint = hash(
     JSON.stringify({
       workspace,

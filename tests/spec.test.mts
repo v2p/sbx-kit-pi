@@ -10,7 +10,7 @@ import tokenUsage from "../extensions/token-usage.ts";
 import { extensionHarness } from "./helpers/extension-harness.mts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const source = fs.readFileSync(path.join(root, "spec.yaml"), "utf8");
+const source = fs.readFileSync(path.join(root, "sbx-kit-pi.yaml"), "utf8");
 const dockerfile = fs.readFileSync(path.join(root, "Dockerfile"), "utf8");
 const packageMetadata = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
   version: string;
@@ -31,6 +31,8 @@ function capability(name: string) {
 }
 
 test("uses a v3 workload with tier-agnostic OpenAI Codex naming", () => {
+  // sbx treats spec.yaml as a legacy artifact, even with schemaVersion: "3".
+  assert.equal(fs.existsSync(path.join(root, "spec.yaml")), false);
   assert.equal(spec.schemaVersion, "3");
   assert.equal(spec.kind, "workload");
   assert.equal(capability("sbx").config, undefined);

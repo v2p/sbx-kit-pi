@@ -26,7 +26,7 @@ cd ~/Projects/my-project
 sbx-pi
 ```
 
-Docker Sandbox creates a sandbox using the public image in `spec.yaml`. On later
+Docker Sandbox creates a sandbox using the public image in `sbx-kit-pi.yaml`. On later
 runs, the same command attaches to that project's sandbox automatically.
 
 For first-time authentication:
@@ -316,7 +316,7 @@ OpenAI OAuth access and refresh tokens are available inside the sandbox at
 identify your ChatGPT account. Keep the sandbox private and never share that
 file. Prefer proxy-managed credentials for other services.
 
-Network access is restricted by `spec.yaml`. Pi's update check and telemetry are
+Network access is restricted by `sbx-kit-pi.yaml`. Pi's update check and telemetry are
 disabled. The kit does not write Pi user settings.
 
 Run `/logout` in Pi to remove its local credential. To also remove a host-stored

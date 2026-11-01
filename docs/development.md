@@ -19,10 +19,10 @@ npm run format:check
 
 Run the complete check with `./scripts/check`. It installs dependencies, audits,
 checks formatting/lint and types, runs tests, builds and smoke-tests the image and
-builds the v3 workload/example descriptors when Docker is available, and runs
-`sbx kit validate --offline` on both kits when `sbx` is available. Run skipped
-checks on a Docker Sandbox host. Offline validation does not start the daemon or
-require sign-in; it does not check host source or signature policies.
+builds the v3 workload/example descriptors when Docker is available. Run skipped
+checks on a Docker host. Descriptor builds validate v3 syntax but do not check
+host source or signature policies. `sbx kit validate --offline` has no v3 source
+builder in Docker Sandboxes 0.50.1; use the descriptor builds below instead.
 For a quick iteration use `npm test`; audit separately with `npm run audit`.
 
 The launcher, `scripts/check`, and sandbox Bash environment source
@@ -47,11 +47,11 @@ make publish
 make publish DOCKERHUB_USERNAME=another-user
 ```
 
-`spec.yaml` references the concrete public image
+`sbx-kit-pi.yaml` references the concrete public image
 `docker.io/vposvistelik/sbx-kit-pi:<kit-version>`. Changing the publishing namespace
 also requires changing that reference in the v3 descriptor's inline `build`.
 The Dockerfile publishes the runtime base image; Docker Sandbox builds the
-v3 workload wrapper from `spec.yaml`. Launch configuration (`ENTRYPOINT`,
+v3 workload wrapper from `sbx-kit-pi.yaml`. Launch configuration (`ENTRYPOINT`,
 `CMD`, and safety environment) belongs to the image. The entrypoint owns Pi's
 provider, model, and extension defaults so native `env exec` uses the same
 command as direct launches.
@@ -59,9 +59,14 @@ command as direct launches.
 Validate the workload and bundled mixin with:
 
 ```console
-sbx kit validate --offline .
-sbx kit validate --offline examples/mixins/project-bootstrap
+docker build --file sbx-kit-pi.yaml .
+docker build --file examples/mixins/project-bootstrap/project-bootstrap.yaml examples/mixins/project-bootstrap
 ```
+
+Keep v3 descriptors named `<kit>.yaml`, not `spec.yaml`: `sbx` treats the latter
+as a legacy artifact and sends it to the v2 parser, regardless of `schemaVersion`.
+Generated network mixins use the same v3 naming convention in a separate
+`network-policy` directory, avoiding old generated legacy artifacts.
 
 Fresh creation must use the local workload reference, not a built-in v2 agent
 shortcut. In native environments, `agent` matches the checkout directory name.
@@ -74,7 +79,7 @@ Pi, update the Dockerfile `PI_AGENT_VERSION` default and Pi dependencies in both
 `package.json` and `runtime/package.json`, then regenerate both lockfiles with
 `npm install --ignore-scripts` and `npm --prefix runtime install --package-lock-only --ignore-scripts`.
 For a release, bump the version in `package.json`, `package-lock.json`, and the
-`spec.yaml` image tag;
+`sbx-kit-pi.yaml` image tag;
 rebuild and test both a fresh sandbox and recreation of an existing one.
 
 Publish the versioned image before recreating the sandbox. Recreation discards

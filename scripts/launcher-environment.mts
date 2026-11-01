@@ -48,9 +48,11 @@ export function writeNetworkKit(config: ResolvedConfig, directory: string): stri
   if (!config.networkAllow.length) {
     return null;
   }
-  const kit = path.join(directory, "network-kit");
+  // Keep v3 sources separate from persisted network-kit/spec.yaml artifacts:
+  // that reserved filename would force sbx to use its legacy parser.
+  const kit = path.join(directory, "network-policy");
   writePrivateYaml(
-    path.join(kit, "spec.yaml"),
+    path.join(kit, "network-policy.yaml"),
     {
       schemaVersion: "3",
       kind: "mixin",

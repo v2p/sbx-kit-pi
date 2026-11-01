@@ -715,7 +715,8 @@ test("supplemental allowed hosts become sandbox-only permissions and require rec
   const provision = f.calls().find((call) => call[0] === "env" && call[1] === "run");
   assert.ok(provision);
   const overlay = parseYaml(fs.readFileSync(provision[3], "utf8"));
-  const kit = parseYaml(fs.readFileSync(path.join(overlay.kits[1], "spec.yaml"), "utf8"));
+  assert.equal(fs.existsSync(path.join(overlay.kits[1], "spec.yaml")), false);
+  const kit = parseYaml(fs.readFileSync(path.join(overlay.kits[1], "network-policy.yaml"), "utf8"));
   assert.equal(kit.kind, "mixin");
   assert.equal(kit.schemaVersion, "3");
   assert.deepEqual(kit.capabilities, [
@@ -739,7 +740,9 @@ test("supplemental allowed hosts become sandbox-only permissions and require rec
   assert.match(attached.stderr, /supplemental network settings changed/);
   const recreated = f.run(["--recreate"]);
   assert.equal(recreated.status, 0, recreated.stderr);
-  const current = parseYaml(fs.readFileSync(path.join(overlay.kits[1], "spec.yaml"), "utf8"));
+  const current = parseYaml(
+    fs.readFileSync(path.join(overlay.kits[1], "network-policy.yaml"), "utf8"),
+  );
   assert.deepEqual(current.capabilities[0].config, {
     install: { allow: ["other.example"] },
     runtime: { allow: ["other.example"] },
