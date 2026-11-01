@@ -11,14 +11,22 @@ This repository is `sbx-kit-pi`: a Docker Sandbox kit that launches the Pi codin
 - `tests/spec.test.mts` contains static tests for the kit contract.
 - `Makefile` is intentionally limited to building/publishing the image and installing/uninstalling the optional user command.
 
+## Design policy: one current path
+
+- This is a single-user project. Update the checkout, tooling, and sandbox together; do not maintain compatibility for hypothetical legacy users.
+- Replace obsolete behavior in place. Remove superseded code, tests, and documentation instead of adding version detection, fallback branches, compatibility aliases, dual configuration paths, automatic migrations, or deprecation periods unless explicitly requested.
+- Document the current requirements and canonical workflow, not upgrade history or speculative future migrations. Git history records past behavior.
+- Simplicity does not remove safety requirements: retain validation, approval boundaries, preservation of user options/data, and warnings about destructive operations. Test current observable behavior rather than emulating obsolete upstream releases.
+
 ## Development workflow
 
 - Use an official Node.js 22.19+ build with native TypeScript stripping; some distro builds omit it.
 - Runtime modules and tests use `.mts`; Pi extensions use `.ts`. Keep explicit import extensions, type-only imports, and erasable syntax so Node can run scripts without a build step or loader.
 - Run `npm test` for static tests and `npm run typecheck` for strict checking of scripts, extensions, and tests.
-- Run `./scripts/check` to install locked dependencies, audit, format-check, lint, type-check, test, build and smoke-test the custom image when Docker is available, and run `sbx kit validate .` when `sbx` is available.
+- Run `./scripts/check` to install locked dependencies, audit, format-check, lint, type-check, test, build and smoke-test the custom image when Docker is available, and run `sbx kit validate --offline .` when `sbx` is available.
 - Use `make image` for a local image build plus smoke test and `make publish` for a release push.
-- Run `sbx kit validate .` on a Docker Sandbox host when changing `spec.yaml`.
+- Target Docker Sandboxes 0.50.0+.
+- Run `sbx kit validate --offline .` when changing `spec.yaml`; also test host policy/approval and fresh/existing-sandbox flows before release.
 - Keep tests focused on observable kit contracts and safety invariants. Do not add tests that mirror arbitrary file contents or implementation details; they are brittle and mostly catch intentional refactors rather than user-visible regressions.
 
 ## Important constraints

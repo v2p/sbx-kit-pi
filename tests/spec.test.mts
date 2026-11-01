@@ -142,7 +142,7 @@ test("does not create or overwrite user settings", () => {
 });
 
 test("shell scripts have valid Bash syntax", () => {
-  for (const script of ["run", "container-entrypoint"]) {
+  for (const script of ["run", "check", "container-entrypoint", "node-environment"]) {
     const syntax = spawnSync("bash", ["-n", path.join(root, "scripts", script)], {
       encoding: "utf8",
     });

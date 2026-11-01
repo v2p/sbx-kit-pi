@@ -1,0 +1,7 @@
+# Sourced by host scripts and the sandbox's persistent Bash environment.
+# Keep proxy routing and other diagnostics intact; hide only this startup notice.
+case " ${NODE_OPTIONS-} " in
+  *" --disable-warning=UNDICI-EHPA "*) ;;
+  *) NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--disable-warning=UNDICI-EHPA" ;;
+esac
+export NODE_OPTIONS

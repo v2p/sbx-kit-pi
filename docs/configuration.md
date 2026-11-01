@@ -38,11 +38,11 @@ for shared settings.
 
 `--env-arg` and `--env-args-file` are forwarded to every native operation. Docker
 owns argument expansion, deep merging, validation, resource reconciliation, and
-approval. The launcher never supplies `--auto-approve`. `sbx-pi plan` uses
-`sbx env plan`; `--recreate` removes resources with `sbx env rm --force`, then
-runs the current environment. Forced removal is requested only by `--recreate`.
+approval. The launcher never supplies `--force` for planning or provisioning.
+`sbx-pi plan` uses `sbx env plan`; `--recreate` removes resources with
+`sbx env rm --force`, then runs the current environment. Forced removal is requested only by `--recreate`.
 
-Launch uses `sbx env run --detached`, followed by `sbx env exec` with the kit's
+Launch uses `sbx env run --detach`, followed by `sbx env exec` with the kit's
 entrypoint and Pi arguments, since native `env run` has no agent argument
 passthrough. An interactive terminal is allocated when stdin/stdout are terminals.
 Verify this flow on the host's experimental `sbx` release, including OAuth login

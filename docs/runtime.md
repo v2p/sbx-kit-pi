@@ -1,5 +1,14 @@
 # Runtime behavior
 
+## Node proxy warning
+
+The launcher and sandbox Bash environment suppress only Node's `UNDICI-EHPA`
+startup notice (`EnvHttpProxyAgent is experimental`). Docker's proxy routing
+remains enabled, existing `NODE_OPTIONS` are preserved, and other warnings remain
+visible. The sandbox setting applies to Pi and Node commands launched through
+Bash, including agent tool calls. Image changes use the standard
+[recreation workflow](../README.md#recreate-or-upgrade-a-sandbox).
+
 ## Token usage
 
 After every LLM turn, Pi prints a compact interactive usage line:

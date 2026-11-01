@@ -3,6 +3,7 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
+source "$root/scripts/node-environment"
 
 printf '%s\n' '==> Installing test dependencies'
 npm ci --ignore-scripts --no-audit --no-fund
@@ -31,7 +32,7 @@ fi
 
 if command -v sbx >/dev/null 2>&1; then
   printf '%s\n' '==> Running Docker Sandbox kit validation'
-  sbx kit validate .
+  sbx kit validate --offline .
 else
-  printf '%s\n' '==> SKIP: sbx is unavailable; run "sbx kit validate ." on a Docker Sandbox host' >&2
+  printf '%s\n' '==> SKIP: sbx is unavailable; run "sbx kit validate --offline ." on a Docker Sandbox host' >&2
 fi

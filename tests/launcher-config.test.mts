@@ -593,8 +593,8 @@ lifecycle:
   const provision = calls.find((args) => args[0] === "env" && args[1] === "run");
   assert.ok(provision);
   assert.equal(provision[2], environment);
-  assert.equal(provision.at(-1), "--detached");
-  assert.equal(provision.includes("--auto-approve"), false);
+  assert.equal(provision.at(-1), "--detach");
+  assert.equal(provision.includes("--force"), false);
   const overlayFile = provision[3];
   const overlay = parseYaml(fs.readFileSync(overlayFile, "utf8"));
   assert.equal(overlay.workspace, undefined, "do not override native workspace or clone mode");

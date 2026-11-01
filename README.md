@@ -8,7 +8,7 @@ billing.
 
 On your **Linux host**, you need:
 
-- Docker Sandboxes with experimental `sbx env` commands and schema-v2 OAuth credential-file support
+- Docker Sandboxes 0.50.0 or newer (including experimental `sbx env` commands)
 - An official Node.js 22.19+ build with native TypeScript support, and npm
 - A ChatGPT subscription with Codex access
 
@@ -76,7 +76,7 @@ or use clone mode. Session files may contain source code and secrets; keep them 
 ### Recreate or upgrade a sandbox
 
 After updating this checkout, replace an existing sandbox with the image and
-configuration selected by the current kit:
+configuration selected by the current kit (after its versioned image is published):
 
 ```console
 sbx-pi --recreate
@@ -98,8 +98,8 @@ the native plan. The launcher does not check for new kit releases.
 Use Docker's native [sandbox environment file](https://docs.docker.com/ai/sandboxes/configuration/environment-files/)
 for everything it supports: kits, workspaces, read-only mounts, environment
 variables, ports, resources, credentials, MCP, and host lifecycle commands.
-`sbx env` is experimental; use a version supporting layered YAML, `run --detached`,
-and `exec` with environment arguments.
+`sbx env` is experimental. The launcher uses `run --detach` and `exec` with
+environment arguments. Use schema-v2 mixins with this kit.
 
 From your project configuration directory:
 

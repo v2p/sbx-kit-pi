@@ -42,10 +42,12 @@ if [[ ${1:-} == -h || ${1:-} == --help ]] ||
   exit 0
 fi
 
+launcher=$(readlink -f "${BASH_SOURCE[0]}")
+kit_dir=$(cd "$(dirname "$launcher")/.." && pwd -P)
+source "$kit_dir/scripts/node-environment"
+
 # Completion must bypass workspace discovery and all launch-time side effects.
 if [[ ${1:-} == completion || ${1:-} == _complete ]]; then
-  launcher=$(readlink -f "${BASH_SOURCE[0]}")
-  kit_dir=$(cd "$(dirname "$launcher")/.." && pwd -P)
   command=$1
   shift
   if [[ $command == completion ]]; then
@@ -184,8 +186,6 @@ while [[ $config_command != alias ]] && (( $# )); do
   esac
 done
 
-launcher=$(readlink -f "${BASH_SOURCE[0]}")
-kit_dir=$(cd "$(dirname "$launcher")/.." && pwd -P)
 if [[ $config_command == alias ]]; then
   exec node "$kit_dir/scripts/launcher-config.mts" alias "$@"
 fi
@@ -328,7 +328,7 @@ if [[ $environment_mode == native ]]; then
   if (( sandbox_exists && ! recreate_existing )); then
     node "$kit_dir/scripts/launcher-config.mts" compare "$config_file"
   fi
-  sbx env run "${environment_paths[@]}" "${native_args[@]}" --detached
+  sbx env run "${environment_paths[@]}" "${native_args[@]}" --detach
   if [[ -n $sandbox_name ]] && (( ! sandbox_exists || recreate_existing )); then
     node "$kit_dir/scripts/launcher-config.mts" record "$config_file"
   fi

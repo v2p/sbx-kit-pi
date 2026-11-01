@@ -17,8 +17,8 @@ help: ## Show available targets
 	@awk 'BEGIN { FS = ":.*## "; printf "Usage: make <target>\n\n" } /^[a-zA-Z_-]+:.*## / { printf "  %-10s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 image: ## Build and smoke-test the sandbox image
-	docker build --build-arg PI_AGENT_VERSION=$(PI_AGENT_VERSION) -t "$(IMAGE)" .
-	docker run --rm --entrypoint sh "$(IMAGE)" -c 'test "$$(pi --version)" = "$(PI_AGENT_VERSION)" && test -r /opt/sbx-kit-pi/extensions/agents-postprocessor.ts && test -r /opt/sbx-kit-pi/extensions/agents-classifier-output.ts && test -r /opt/sbx-kit-pi/extensions/host-rpc.ts && test -r /opt/sbx-kit-pi/scripts/host-rpc-protocol.mts && test -r /opt/sbx-kit-pi/extensions/token-usage.ts && test -x /opt/sbx-kit-pi/scripts/container-entrypoint && test -x /opt/sbx-kit-pi/scripts/import-codex-auth.mts && node --input-type=module -e "await import(\"/opt/sbx-kit-pi/scripts/host-rpc-protocol.mts\")" && pi --offline --no-extensions --extension /opt/sbx-kit-pi/extensions/agents-postprocessor.ts --extension /opt/sbx-kit-pi/extensions/host-rpc.ts --extension /opt/sbx-kit-pi/extensions/token-usage.ts --list-models openai-codex >/dev/null'
+	docker build --pull --build-arg PI_AGENT_VERSION=$(PI_AGENT_VERSION) -t "$(IMAGE)" .
+	docker run --rm --entrypoint bash "$(IMAGE)" -c 'test "$$(pi --version)" = "$(PI_AGENT_VERSION)" && test -r /opt/sbx-kit-pi/extensions/agents-postprocessor.ts && test -r /opt/sbx-kit-pi/extensions/agents-classifier-output.ts && test -r /opt/sbx-kit-pi/extensions/host-rpc.ts && test -r /opt/sbx-kit-pi/scripts/host-rpc-protocol.mts && test -r /opt/sbx-kit-pi/extensions/token-usage.ts && test -x /opt/sbx-kit-pi/scripts/container-entrypoint && test -x /opt/sbx-kit-pi/scripts/import-codex-auth.mts && node --input-type=module -e "await import(\"/opt/sbx-kit-pi/scripts/host-rpc-protocol.mts\")" && pi --offline --no-extensions --extension /opt/sbx-kit-pi/extensions/agents-postprocessor.ts --extension /opt/sbx-kit-pi/extensions/host-rpc.ts --extension /opt/sbx-kit-pi/extensions/token-usage.ts --list-models openai-codex >/dev/null'
 
 publish: image ## Build, verify, and push the versioned image
 	docker push "$(IMAGE)"

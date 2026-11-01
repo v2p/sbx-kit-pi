@@ -1,5 +1,9 @@
 # Development
 
+This is a single-user kit: keep one current implementation and update the tooling
+and sandbox with it. Replace obsolete behavior rather than supporting parallel
+old/new paths. See the [design policy](../AGENTS.md#design-policy-one-current-path).
+
 Use an official Node.js 22.19+ build with native TypeScript stripping; some distro
 builds omit it. Check with `node -p process.features.typescript` (expect `strip`
 or `transform`). The sandbox image includes an official Node runtime. Image builds
@@ -15,9 +19,17 @@ npm run format:check
 
 Run the complete check with `./scripts/check`. It installs dependencies, audits,
 checks formatting/lint and types, runs tests, builds and smoke-tests the image when Docker
-is available, and runs `sbx kit validate .` when `sbx` is available. Run skipped
-checks on a Docker Sandbox host. For a quick iteration use `npm test`; audit
-separately with `npm run audit`.
+is available, and runs `sbx kit validate --offline .` when `sbx` is available. Run skipped
+checks on a Docker Sandbox host. Offline validation does not start the daemon or
+require sign-in; it does not check host source or signature policies.
+For a quick iteration use `npm test`; audit separately with `npm run audit`.
+
+The launcher, `scripts/check`, and sandbox Bash environment source
+`scripts/node-environment` to suppress only Node's experimental proxy-agent notice
+(`UNDICI-EHPA`). Before running npm directly on a proxy-enabled host, run
+`source scripts/node-environment`. This preserves existing
+`NODE_OPTIONS`, other diagnostics, and `NODE_USE_ENV_PROXY`; do not disable proxy
+support or use blanket warning suppression.
 
 Install Zsh to run the generated `.zfunc` completion integration tests locally.
 Without Zsh those tests are skipped; `SBX_PI_REQUIRE_ZSH=1 npm test` requires them.
@@ -42,6 +54,17 @@ Image tags follow this kit's semver, independently of Pi's version. To upgrade
 Pi, change the Dockerfile `PI_AGENT_VERSION` default. For a release, bump the
 version in `package.json`, `package-lock.json`, and the `spec.yaml` image tag;
 rebuild and test both a fresh sandbox and recreation of an existing one.
+
+Publish the versioned image before recreating the sandbox. Recreation discards
+sandbox-local changes; save them first. See the [recreation workflow](../README.md#recreate-or-upgrade-a-sandbox).
+
+## Dependency audit
+
+Publishing is blocked by advisories in Pi's pinned `undici@8.10.2` and
+`minimatch@10.2.6` dependencies. Although Pi is a dev dependency in this checkout,
+it is installed in the sandbox image. Keep the full audit gate and resolve these
+pins before publishing; the clean host production-only audit is not sufficient.
+Do not use `npm audit fix --force` to downgrade unrelated tooling.
 
 ## Code style
 
