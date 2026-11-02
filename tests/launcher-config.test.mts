@@ -93,6 +93,38 @@ else if (args[0] === 'run') {
   return { dir, workspace, subdir, manifest, global, env, run, show, status, calls };
 }
 
+test("launch migrates the historical environment agent, while inspection leaves it untouched", (t) => {
+  const f = fixture(t);
+  const file = path.join(f.workspace, "sbxenv.yaml");
+  const source = 'schemaVersion: "1"\nagent: pi-openai-codex\nworkspace: .\nkits: [./tools]\n';
+  const kit = path.join(f.workspace, "tools");
+  fs.mkdirSync(kit);
+  const spec = path.join(kit, "spec.yaml");
+  fs.writeFileSync(spec, 'schemaVersion: "2"\nkind: mixin\nname: tools\n');
+  fs.writeFileSync(file, source);
+  for (const args of [["config", "show"], ["status"], ["plan"]]) {
+    const result = f.run(args);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fs.readFileSync(file, "utf8"), source);
+    assert.equal(fs.existsSync(file + ".v2.bak"), false);
+    assert.equal(fs.existsSync(spec), true);
+  }
+  const result = f.run([], { SBX_PI_HOST_RPC_ALLOW: "off" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /Migrated/);
+  assert.equal(parseYaml(fs.readFileSync(file, "utf8")).agent, path.basename(root));
+  assert.equal(fs.readFileSync(file + ".v2.bak", "utf8"), source);
+  assert.equal(fs.existsSync(spec), false);
+  assert.equal(parseYaml(fs.readFileSync(path.join(kit, "tools.yaml"), "utf8")).schemaVersion, "3");
+  const again = f.run([], { SBX_PI_HOST_RPC_ALLOW: "off" });
+  assert.equal(again.status, 0, again.stderr);
+  assert.doesNotMatch(again.stderr, /Migrated/);
+  assert.equal(
+    f.calls().some((args) => args[0] === "rm" || (args[0] === "env" && args[1] === "rm")),
+    false,
+  );
+});
+
 test("host RPC policy is global-only with per-launch environment overrides", (t) => {
   const f = fixture(t);
   assert.equal(f.show().hostRpcAllow, "notification.send,network.request,file.access");

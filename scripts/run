@@ -198,7 +198,11 @@ if [[ $config_command != resolve && $config_command != plan ]]; then
 fi
 
 config_file=$(mktemp)
-node "$kit_dir/scripts/launcher-config.mts" resolve "${config_args[@]}" > "$config_file"
+resolution_command=launch
+if [[ $config_command == plan ]]; then
+  resolution_command=resolve
+fi
+node "$kit_dir/scripts/launcher-config.mts" "$resolution_command" "${config_args[@]}" > "$config_file"
 protocol_file=$(mktemp)
 node "$kit_dir/scripts/launcher-config.mts" fields "$config_file" > "$protocol_file"
 mapfile -d '' -t resolved < "$protocol_file"

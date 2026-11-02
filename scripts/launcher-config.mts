@@ -13,6 +13,7 @@ import {
   writeNetworkKit,
 } from "./launcher-environment.mts";
 
+import { migrateProject } from "./launcher-migration.mts";
 import { isMethod } from "./host-rpc-protocol.mts";
 import { allowedMethods } from "./host-rpc-listener.mts";
 import { resolveHandlers } from "./host-rpc-handlers.mts";
@@ -458,8 +459,16 @@ try {
       }
     }
   } else {
-    const config = resolve(args);
-    if (command === "resolve" || command === "show") {
+    let config = resolve(args);
+    if (command === "launch") {
+      migrateProject(
+        config.environmentFiles,
+        config.kits.map((ref) => (ref.startsWith(".") ? path.resolve(config.workspace, ref) : ref)),
+        path.basename(root),
+      );
+      config = resolve(args);
+    }
+    if (command === "resolve" || command === "show" || command === "launch") {
       console.log(JSON.stringify(config, null, 2));
     } else if (command === "status") {
       const names = execFileSync("sbx", ["ls", "-q"], { encoding: "utf8" }).split(/\r?\n/);

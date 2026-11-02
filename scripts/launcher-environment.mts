@@ -27,7 +27,8 @@ export function inspectEnvironment(files: string[], agent: string): EnvironmentM
       }
     }
   }
-  if (result.agent !== undefined && result.agent !== agent) {
+  // Read-only inspection must also work before launch migrates the old identity.
+  if (result.agent !== undefined && result.agent !== agent && result.agent !== "pi-openai-codex") {
     throw new Error(`sbx-pi requires agent: ${agent}; use sbx env for other agents`);
   }
   return result;

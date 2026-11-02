@@ -28,7 +28,8 @@ The launcher appends a stable private YAML layer under
 This supplies the installed checkout's Pi kit and session mount, plus default
 agent and name values only when missing. Omitting `workspace` keeps native
 mountless behavior; `init` explicitly selects `workspace: .`. Native lists concatenate;
-user YAML is never copied, flattened, or rewritten. Do not repeat the launcher's
+user YAML is not copied or flattened. Apart from the one-time conversion below,
+it is not rewritten. Do not repeat the launcher's
 Pi kit or its session mount in your project YAML.
 
 Native files should remain outside writable workspace trees, following Docker's
@@ -55,6 +56,32 @@ and `unknown` for names requiring Docker argument expansion. It does not claim
 native configuration is current: inspect `plan`. Workspace, kit, port, credential,
 and resource changes take effect on recreation. Local kit contents and mutable
 references may change without a detectable plan difference.
+
+## Automatic project conversion
+
+Normal launches convert the project's old `agent: pi-openai-codex` to the
+checkout directory's name, keeping YAML comments and other environment settings.
+Environment files stay schema v1. The checkout's own workload is supplied by the
+updated tool; project files should not duplicate it.
+
+Referenced local schema-v2 mixins are converted from `spec.yaml` to
+`<kit-directory>.yaml`, since `spec.yaml` forces Docker's legacy parser. This
+covers the historical project-bootstrap format: install commands (including
+workspace working directory), network allowlists, and agent instructions.
+Network hosts remain allowed during both installation and runtime. Relative
+references resolve beside their environment file; TOML and CLI kit references
+use the launcher's usual resolution rules. Remote kits are never downloaded or
+rewritten by the converter; select v3 releases yourself.
+
+Every changed source gets an exact `.v2.bak` backup. Unsupported fields,
+non-mixin v2 kits, symlinked source files, existing backups, or conflicting v3
+descriptors stop conversion rather than discard user settings. All conversions
+are checked before writing. An interrupted conversion may require restoring the
+backups before retrying. Conversion does not recreate sandboxes: use
+`--recreate` explicitly to apply creation-time changes.
+
+`config show`, `status`, and `plan` do not convert project files. Run a normal
+launch before planning a project that still references v2 mixins.
 
 ## Supplemental network permissions
 
