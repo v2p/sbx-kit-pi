@@ -26,8 +26,9 @@ cd ~/Projects/my-project
 sbx-pi
 ```
 
-Docker Sandbox creates a sandbox using the public image in `sbx-kit-pi.yaml`. On later
-runs, the same command attaches to that project's sandbox automatically.
+The launcher creates `sbxenv.yaml` if needed, then Docker Sandbox creates a sandbox
+using the public image in `sbx-kit-pi.yaml`. On later runs, the same command reuses
+the configuration and attaches to that project's sandbox automatically.
 
 For first-time authentication:
 
@@ -57,7 +58,8 @@ from your project. `make uninstall` removes the installed command.
 ## Everyday use
 
 ```console
-sbx-pi                  # Create or attach
+sbx-pi                  # Save configuration if needed, then create or attach
+sbx-pi --kit @node       # Replace and persist the project's mixin selection
 sbx-pi --continue       # Continue the latest Pi session
 sbx-pi --resume         # Choose a saved Pi session
 sbx-pi --help           # Launcher help
@@ -105,10 +107,11 @@ schema-v3 mixins. V2 kits cannot be combined with it.
 From your project configuration directory:
 
 ```console
-sbx-pi init --kit docker.io/acme/node-kit:1.2.0 --kit ./sandbox-kits/project-tools
+sbx-pi --kit docker.io/acme/node-kit:1.2.0 --kit ./sandbox-kits/project-tools
 ```
 
-This creates and displays **`sbxenv.yaml`**, without Docker or an automatic launch:
+This creates or updates **`sbxenv.yaml`**, then launches. For example, with optional
+mounts, ports, and resources added manually:
 
 ```yaml
 schemaVersion: "1"
@@ -128,10 +131,18 @@ sandboxOptions:
   memory: 4g
 ```
 
-The example includes optional settings to add after initialization. `init` never
-overwrites an existing YAML file, inherits a parent configuration, or persists
-global host RPC policy. Local kit paths must remain inside the project
-for a portable generated file. The `acme` references are placeholders; choose
+A plain launch creates a minimal file with `workspace: .` and an empty mixin list.
+`--kit` replaces the saved list with the references supplied on that invocation;
+`--no-kits` saves an empty list. Without either option, the list is left unchanged.
+Edits preserve unrelated YAML fields and comments. Global host RPC policy is never
+copied into project configuration. Local kit paths must remain inside the project
+for a portable generated file.
+
+For an existing sandbox, changed CLI kit selections are saved but launch stops
+with an instruction to run `sbx-pi --recreate`. This deletes sandbox-local changes;
+nothing is recreated automatically. You can also save and apply in one invocation
+with `sbx-pi --recreate --kit ...`. With multiple `--env` layers, edit kits in YAML
+instead of using CLI kit options. The `acme` references are placeholders; choose
 real reviewed kits. A local example is in
 [`examples/mixins/project-bootstrap/`](examples/mixins/project-bootstrap/).
 
@@ -146,8 +157,8 @@ layer outside the workspace containing its Pi kit and persistent session mount.
 Only missing `agent` and `name` values receive launcher defaults. Omitting
 `workspace` retains Docker's mountless behavior.
 The agent must match this checkout's directory name (`sbx-kit-pi` by default);
-v3 workload identity comes from its reference, not a manifest `name`. `init`
-uses that name automatically. Use `sbx env` directly for other agents.
+v3 workload identity comes from its reference, not a manifest `name`. Generated
+configuration uses that name automatically. Use `sbx env` directly for other agents.
 Environment files still use `schemaVersion: "1"`; only kit manifests use v3.
 
 | Option                 | Effect                                                                 |
@@ -156,10 +167,9 @@ Environment files still use `schemaVersion: "1"`; only kit manifests use v3.
 | `--env-arg NAME=VALUE` | Forward a declared environment argument to Docker.                     |
 | `--env-args-file PATH` | Forward an argument file; repeat as needed.                            |
 | `--config PATH`        | Select Pi TOML and its sibling `sbxenv.yaml`.                          |
-| `--no-config`          | Disable project discovery; retain the legacy current-directory launch. |
 | `--allow-host HOST`    | Replace supplemental allowed hosts; repeat for multiple hosts.         |
 
-`--env` and `--config` cannot be combined, nor combined with `--no-config`.
+`--env` and `--config` cannot be combined.
 With explicit YAML layers, Pi TOML is loaded beside the first layer. As with native
 `sbx env` using explicit paths, `~/.sbxenv.yaml` is not implicitly loaded.
 YAML argument expressions are resolved by Docker, not by the launcher.
@@ -181,14 +191,6 @@ policy rules. Explicit denies and organization policy still take precedence.
 Changing this list requires `--recreate`. An empty list removes supplemental
 permissions on recreation, not the base Pi kit's required hosts.
 
-### Legacy projects
-
-TOML-only projects and launches without configuration keep their existing behavior.
-Legacy `kits`, `--kit`, and `--no-kits` remain supported there. Once YAML exists,
-move `kits` into YAML and remove the TOML key; CLI kit overrides are rejected to
-avoid two sources of truth. `init --kit` remains the convenient way to generate
-YAML, including expansion of personal aliases. See [configuration details](docs/configuration.md).
-
 ### Global configuration
 
 Optional defaults live at `~/.config/sbx-pi/global.toml` (or
@@ -207,10 +209,10 @@ You can create aliases from the CLI:
 ```console
 sbx-pi config alias node docker.io/acme/node-kit:1.2.0
 sbx-pi config alias node docker.io/acme/node-kit:1.3.0 --replace
-sbx-pi init --kit @node
+sbx-pi --kit @node
 ```
 
-Aliases do not inject default kits. `init` expands them into concrete YAML references
+Aliases do not inject default kits. `--kit` expands them into concrete YAML references
 for sharing; native YAML does not interpret `@aliases`. Alias writes preserve
 settings but reformat TOML and remove comments.
 See [configuration details](docs/configuration.md) for path and write behavior.

@@ -4,7 +4,6 @@ import type { Method } from "./host-rpc-protocol.mts";
 // Validated preferences; Docker remains responsible for native YAML settings.
 export interface Preferences {
   schema_version: 1;
-  kits?: string[];
   network?: { allow: string[] };
   kit_aliases?: Record<string, string>;
   host_rpc?: { allow?: Method[]; handlers?: Partial<HandlerCommands> };
@@ -15,7 +14,7 @@ export interface ResolvedConfig {
   workspace: string;
   projectFile: string | null;
   globalFile: string | null;
-  kits: string[];
+  kitsChanged: boolean;
   environmentFiles: string[];
   nativeArguments: string[];
   networkAllow: string[];
@@ -36,13 +35,9 @@ export interface AppliedConfig extends ResolvedConfig {
 
 export interface ConfigStatus {
   sandbox: string | null;
-  workspace?: string;
-  projectDirectory?: string;
-  status: "not-created" | "unknown" | "current" | "drifted" | "exists";
-  appliedAt?: string | null;
-  desiredKits?: string[];
-  appliedKits?: string[] | null;
-  managedBy?: string;
-  environmentFiles?: string[];
-  hint?: string;
+  projectDirectory: string;
+  status: "not-created" | "unknown" | "exists";
+  managedBy: string;
+  environmentFiles: string[];
+  hint: string;
 }

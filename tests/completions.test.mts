@@ -78,14 +78,17 @@ function fixture(t: TestContext) {
 
 test("completion offers context-specific launcher commands and flags, not Pi arguments", (t) => {
   const f = fixture(t);
-  assert.ok(f.complete("").includes("init"));
+  assert.ok(f.complete("").includes("--kit"));
   assert.ok(f.complete("").includes("completion"));
   assert.deepEqual(f.complete("completion", ""), ["words", "zsh"]);
   assert.deepEqual(f.complete("completion", "z"), ["words", "zsh"]);
   assert.deepEqual(f.complete("completion", "zsh", ""), ["words"]);
   assert.deepEqual(f.complete("config", ""), ["words", "show", "alias"]);
   assert.deepEqual(f.complete("--rec"), ["words", "--recreate"]);
-  assert.deepEqual(f.complete("init", "--"), ["words", "--kit", "--no-kits", "--help"]);
+  for (const command of [["status"], ["plan"], ["config", "show"]]) {
+    assert.equal(f.complete(...command, "--").includes("--kit"), false);
+    assert.equal(f.complete(...command, "--").includes("--no-kits"), false);
+  }
   assert.deepEqual(f.complete("status", "--rec"), ["words"]);
   assert.deepEqual(f.complete("config", "show", "--con"), ["words", "--config"]);
   assert.deepEqual(f.complete("--config", "a file"), ["files"]);
@@ -100,7 +103,6 @@ test("completion offers context-specific launcher commands and flags, not Pi arg
     "--no-kits",
     "--help",
     "--config",
-    "--no-config",
     "--env",
     "--env-arg",
     "--env-args-file",
@@ -110,7 +112,7 @@ test("completion offers context-specific launcher commands and flags, not Pi arg
   ]);
   assert.deepEqual(f.complete("--", "--"), ["words"]);
   assert.deepEqual(f.complete("--model", "--"), ["words"]);
-  assert.deepEqual(f.complete("--kit", "node", "").includes("init"), false);
+  assert.deepEqual(f.complete("--kit", "node", "").includes("config"), false);
   assert.deepEqual(f.complete("config", "alias", ""), ["words", "node", "node_tools"]);
   assert.deepEqual(f.complete("config", "alias", "node", ""), ["files"]);
   assert.deepEqual(f.complete("config", "alias", "node", "kit", "--"), ["words", "--replace"]);
@@ -127,7 +129,7 @@ test("completion offers context-specific launcher commands and flags, not Pi arg
 test("completion reads global aliases and tolerates missing or malformed personal config", (t) => {
   const f = fixture(t);
   assert.deepEqual(f.complete("--kit", "@no"), ["words", "@node", "@node_tools"]);
-  assert.deepEqual(f.complete("init", "--kit", "@node_"), ["words", "@node_tools"]);
+  assert.deepEqual(f.complete("--kit", "@node_"), ["words", "@node_tools"]);
   fs.writeFileSync(f.global, "invalid TOML");
   assert.deepEqual(f.complete("--kit", "@"), ["words"]);
   fs.rmSync(f.global);

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { parse, stringify } from "yaml";
+import { isMap, parse, parseDocument, stringify } from "yaml";
 import type { ResolvedConfig } from "./launcher-types.mts";
 import { errorMessage, hasErrorCode, isObject } from "./runtime-validation.mts";
 
@@ -27,8 +27,7 @@ export function inspectEnvironment(files: string[], agent: string): EnvironmentM
       }
     }
   }
-  // Read-only inspection must also work before launch migrates the old identity.
-  if (result.agent !== undefined && result.agent !== agent && result.agent !== "pi-openai-codex") {
+  if (result.agent !== undefined && result.agent !== agent) {
     throw new Error(`sbx-pi requires agent: ${agent}; use sbx env for other agents`);
   }
   return result;
@@ -113,17 +112,70 @@ export function writeEnvironmentOverlay(
   return file;
 }
 
-export function initializeEnvironment(file: string, kits: string[], agent: string): string {
-  const content =
-    "# Docker Sandbox settings. sbx-pi adds its Pi kit and persistent session mount.\n" +
-    stringify({ schemaVersion: "1", agent, workspace: ".", kits });
+// Only launches write project configuration. Preserve all unrelated YAML fields
+// and comments; refuse indirect writes and concurrent launcher edits.
+export function saveEnvironment(file: string, kits: string[] | undefined, agent: string): boolean {
+  const lock = `${file}.lock`;
+  let descriptor: number;
   try {
-    fs.writeFileSync(file, content, { flag: "wx", mode: 0o644 });
+    descriptor = fs.openSync(lock, "wx", 0o600);
   } catch (error) {
     if (hasErrorCode(error, "EEXIST")) {
-      throw new Error(`Refusing to overwrite ${file}`, { cause: error });
+      throw new Error(
+        `Configuration is locked: ${lock}. Check for another launcher or a stale lock.`,
+        {
+          cause: error,
+        },
+      );
     }
     throw error;
   }
-  return content;
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  try {
+    const existing = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (existing && !existing.isFile()) {
+      throw new Error(`Refusing to replace non-regular environment file: ${file}`);
+    }
+    let content: string;
+    let changed = false;
+    if (existing) {
+      const source = fs.readFileSync(file, "utf8");
+      const document = parseDocument(source);
+      if (document.errors.length || !isMap(document.contents)) {
+        throw new Error(`${file}: environment must be valid YAML with a mapping`);
+      }
+      if (
+        kits === undefined ||
+        JSON.stringify(document.toJS().kits ?? []) === JSON.stringify(kits)
+      ) {
+        return false;
+      }
+      document.set("kits", kits);
+      content = document.toString();
+      changed = true;
+    } else {
+      content =
+        "# Docker Sandbox settings. sbx-pi adds its Pi kit and persistent session mount.\n" +
+        stringify({ schemaVersion: "1", agent, workspace: ".", kits: kits ?? [] });
+      changed = kits !== undefined && kits.length > 0;
+    }
+    fs.writeFileSync(temporary, content, {
+      flag: "wx",
+      mode: existing ? existing.mode & 0o777 : 0o644,
+    });
+    if (existing) {
+      // writeFileSync's mode is filtered by the current umask.
+      fs.chmodSync(temporary, existing.mode & 0o777);
+      fs.renameSync(temporary, file);
+    } else {
+      // Publish without overwriting a file created since the existence check.
+      fs.linkSync(temporary, file);
+    }
+    console.error(`${existing ? "Updated" : "Created"} ${file}`);
+    return changed;
+  } finally {
+    fs.rmSync(temporary, { force: true });
+    fs.closeSync(descriptor);
+    fs.rmSync(lock, { force: true });
+  }
 }

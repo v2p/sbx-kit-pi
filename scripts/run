@@ -4,14 +4,13 @@ set -euo pipefail
 usage() {
   printf '%s\n' \
     'Usage: sbx-pi [OPTIONS] [--] [PI_ARGS...]' \
-    '       sbx-pi init [--kit KIT ... | --no-kits]' \
     '       sbx-pi status [OPTIONS]' \
     '       sbx-pi plan [OPTIONS]' \
     '       sbx-pi config show [OPTIONS]' \
     '       sbx-pi config alias NAME KIT [--replace]' \
     '       sbx-pi completion zsh' \
     '' \
-    'Create a sandbox for this workspace, or attach if it already exists.' \
+    'Create sbxenv.yaml if needed, then create or attach to the sandbox.' \
     '' \
     'Options:' \
     '  --recreate           Replace the sandbox; discard sandbox-local changes.' \
@@ -21,13 +20,12 @@ usage() {
     '  --env-arg NAME=VALUE  Pass a declared argument to Docker (repeatable).' \
     '  --env-args-file PATH Load declared arguments from a file (repeatable).' \
     '  --allow-host HOST    Replace supplemental allowed hosts (repeatable).' \
-    '  --kit KIT            Select mixins for init or legacy TOML-only projects.' \
-    '  --no-kits            Clear the selected mixins.' \
+    '  --kit KIT            Replace the saved YAML mixins (repeat for multiple).' \
+    '  --no-kits            Save an empty YAML mixin list.' \
     '  --config PATH        Select Pi TOML and its sibling sbxenv.yaml.' \
-    '  --no-config          Ignore project discovery; use the current directory.' \
     '  -h, --help           Show this help without starting Docker Sandbox.' \
     '' \
-    'status and config show accept only kit and configuration options.' \
+    'status, plan, and config show are read-only; they do not accept kit edits.' \
     'Launcher options must precede Pi arguments; use -- to pass Pi --help.' \
     '' \
     'Examples:' \
@@ -58,10 +56,8 @@ fi
 
 recreate_existing=0
 import_codex_auth=0
-additional_kits=()
 config_args=()
 native_args=()
-explicit_kits=0
 explicit_hosts=0
 config_file=
 protocol_file=
@@ -96,9 +92,6 @@ if [[ ${1:-} == config && ${2:-} == show ]]; then
 elif [[ ${1:-} == config && ${2:-} == alias ]]; then
   config_command=alias
   shift 2
-elif [[ ${1:-} == init ]]; then
-  config_command=init
-  shift
 elif [[ ${1:-} == status || ${1:-} == plan ]]; then
   config_command=$1
   shift
@@ -131,12 +124,10 @@ while [[ $config_command != alias ]] && (( $# )); do
         printf 'Missing kit reference after --kit\n' >&2
         exit 2
       fi
-      explicit_kits=1
       config_args+=(--kit "$2")
       shift 2
       ;;
     --no-kits)
-      explicit_kits=1
       config_args+=(--no-kits)
       shift
       ;;
@@ -172,10 +163,6 @@ while [[ $config_command != alias ]] && (( $# )); do
       config_args+=(--config "$2")
       shift 2
       ;;
-    --no-config)
-      config_args+=(--no-config)
-      shift
-      ;;
     --)
       shift
       break
@@ -208,10 +195,8 @@ node "$kit_dir/scripts/launcher-config.mts" fields "$config_file" > "$protocol_f
 mapfile -d '' -t resolved < "$protocol_file"
 workspace=${resolved[0]}
 sandbox_name=${resolved[1]}
-project_file=${resolved[2]}
-environment_mode=${resolved[3]}
-host_rpc_allow=${resolved[4]}
-additional_kits=("${resolved[@]:5}")
+host_rpc_allow=${resolved[2]}
+kits_changed=${resolved[3]}
 project_name=$(basename "$workspace")
 workspace_hash=$(printf '%s' "$workspace" | git hash-object --stdin)
 session_dir="$HOME/pi-sessions-backup/${project_name}-${workspace_hash:0:12}"
@@ -219,7 +204,7 @@ cd "$workspace"
 skills_dir="$session_dir/skills"
 
 if [[ $config_command == plan ]]; then
-  if (( $# || recreate_existing || import_codex_auth )) || [[ $environment_mode != native ]]; then
+  if (( $# || recreate_existing || import_codex_auth )); then
     printf '%s\n' 'plan requires sbxenv.yaml and accepts only configuration options' >&2
     exit 2
   fi
@@ -264,12 +249,12 @@ if [[ -n $sandbox_name ]] && grep -Fxq -- "$sandbox_name" <<< "$existing_sandbox
   sandbox_exists=1
 fi
 
-if (( sandbox_exists && explicit_kits && ! recreate_existing )); then
-  printf 'Sandbox %s already exists; use --recreate to change its kits\n' "$sandbox_name" >&2
+if (( kits_changed && ! recreate_existing )) && { (( sandbox_exists )) || [[ -z $sandbox_name ]]; }; then
+  printf '%s\n' 'Kit selection saved. Use sbx-pi --recreate to apply it to an existing sandbox; sandbox-local changes will be deleted.' >&2
   exit 2
 fi
 
-if (( explicit_hosts && ! recreate_existing )) && [[ $environment_mode == native && -z $sandbox_name ]]; then
+if (( explicit_hosts && ! recreate_existing )) && [[ -z $sandbox_name ]]; then
   printf '%s\n' 'Explicit allowed-host overrides with parameterized names require --recreate; otherwise use project TOML' >&2
   exit 2
 fi
@@ -284,18 +269,8 @@ if (( sandbox_exists && import_codex_auth && ! recreate_existing )); then
   exit 2
 fi
 
-if (( sandbox_exists && ! recreate_existing )) && [[ $environment_mode == legacy ]]; then
-  node "$kit_dir/scripts/launcher-config.mts" compare "$config_file"
-  sbx run --name "$sandbox_name" -- "${pi_args[@]}"
-  exit
-fi
-
-if (( ! sandbox_exists )) && [[ -z $project_file && $environment_mode == legacy ]]; then
-  printf '%s\n' 'Run sbx-pi init to persist this project’s sandbox setup.' >&2
-fi
-
 import_dir=
-if (( import_codex_auth )) && [[ $environment_mode == native && -z $sandbox_name ]]; then
+if (( import_codex_auth )) && [[ -z $sandbox_name ]]; then
   printf '%s\n' 'Codex import requires a literal environment name so existing-sandbox checks are safe' >&2
   exit 2
 fi
@@ -307,11 +282,8 @@ if (( import_codex_auth )); then
   fi
 
   state_home=${XDG_STATE_HOME:-"$HOME/.local/state"}
-  import_name=$sandbox_name
-  if [[ $environment_mode == native ]]; then
-    # Native names are validated by Docker, so never use them as host paths.
-    import_name="native-$(printf '%s' "$sandbox_name" | git hash-object --stdin)"
-  fi
+  # Native names are validated by Docker, so never use them as host paths.
+  import_name="native-$(printf '%s' "$sandbox_name" | git hash-object --stdin)"
   import_dir="$state_home/sbx-kit-pi/import/$import_name"
   import_file="$import_dir/codex-auth.json"
   install -d -m 0700 "$import_dir"
@@ -320,71 +292,24 @@ if (( import_codex_auth )); then
   pi_args+=(--sbx-pi-import-codex-auth "$import_file")
 fi
 
-if [[ $environment_mode == native ]]; then
-  # Native YAML owns sandbox resources and approvals. This adapter only adds
-  # the Pi kit and its host persistence; do not translate YAML into sbx flags.
-  node "$kit_dir/scripts/launcher-config.mts" environment "$config_file" "$session_dir" "$import_dir" > "$protocol_file"
-  mapfile -d '' -t environment_paths < "$protocol_file"
-  if (( recreate_existing )) && { (( sandbox_exists )) || [[ -z $sandbox_name ]]; }; then
-    sbx env rm "${environment_paths[@]}" "${native_args[@]}" --force
-    node "$kit_dir/scripts/launcher-config.mts" forget "$config_file"
-  fi
-  if (( sandbox_exists && ! recreate_existing )); then
-    node "$kit_dir/scripts/launcher-config.mts" compare "$config_file"
-  fi
-  sbx env run "${environment_paths[@]}" "${native_args[@]}" --detach
-  if [[ -n $sandbox_name ]] && (( ! sandbox_exists || recreate_existing )); then
-    node "$kit_dir/scripts/launcher-config.mts" record "$config_file"
-  fi
-  # env run has no agent-argument passthrough. env exec keeps Docker's environment
-  # resolution while allowing Pi arguments. The image and native exec both use
-  # this wrapper, which owns the provider, model, and bundled extension defaults.
-  terminal_args=(-i)
-  if [[ -t 0 && -t 1 ]]; then terminal_args+=(-t); fi
-  sbx env exec "${terminal_args[@]}" "${environment_paths[@]}" "${native_args[@]}" -- /opt/sbx-kit-pi/scripts/container-entrypoint "${pi_args[@]}"
-  exit
+# Native YAML owns sandbox resources and approvals. This adapter only adds
+# the Pi kit and its host persistence; do not translate YAML into sbx flags.
+node "$kit_dir/scripts/launcher-config.mts" environment "$config_file" "$session_dir" "$import_dir" > "$protocol_file"
+mapfile -d '' -t environment_paths < "$protocol_file"
+if (( recreate_existing )) && { (( sandbox_exists )) || [[ -z $sandbox_name ]]; }; then
+  sbx env rm "${environment_paths[@]}" "${native_args[@]}" --force
+  node "$kit_dir/scripts/launcher-config.mts" forget "$config_file"
 fi
-
-if [[ -n $project_file ]]; then
-  printf '%s\n' 'Legacy TOML kits are deprecated; move sandbox settings to sbxenv.yaml (sbx-pi init).' >&2
+if (( sandbox_exists && ! recreate_existing )); then
+  node "$kit_dir/scripts/launcher-config.mts" compare "$config_file"
 fi
-
-if (( recreate_existing )); then
-  if (( sandbox_exists )); then
-    printf 'Recreating sandbox %s with the current kit image and selected mixins\n' "$sandbox_name"
-    sbx rm -f "$sandbox_name"
-    node "$kit_dir/scripts/launcher-config.mts" forget "$config_file"
-  else
-    printf 'Sandbox %s does not exist; creating it with the current kit image and selected mixins\n' "$sandbox_name"
-  fi
+sbx env run "${environment_paths[@]}" "${native_args[@]}" --detach
+if [[ -n $sandbox_name ]] && (( ! sandbox_exists || recreate_existing )); then
+  node "$kit_dir/scripts/launcher-config.mts" record "$config_file"
 fi
-
-printf 'Creating sandbox %s with mixins:\n' "$sandbox_name"
-if (( ${#additional_kits[@]} )); then
-  printf '  %s\n' "${additional_kits[@]}"
-else
-  printf '  (none)\n'
-fi
-
-kit_args=()
-for kit in "${additional_kits[@]}"; do
-  kit_args+=(--kit "$kit")
-done
-
-node "$kit_dir/scripts/launcher-config.mts" network-kit "$config_file" > "$protocol_file"
-network_kit=$(< "$protocol_file")
-if [[ -n $network_kit ]]; then kit_args+=(--kit "$network_kit"); fi
-
-volume_args=("$session_dir")
-if [[ -n $import_dir ]]; then
-  volume_args+=("$import_dir")
-fi
-
-sbx run \
-  --name "$sandbox_name" \
-  "${kit_args[@]}" \
-  "$kit_dir" \
-  "$workspace" \
-  "${volume_args[@]}" \
-  -- "${pi_args[@]}"
-node "$kit_dir/scripts/launcher-config.mts" record "$config_file"
+# env run has no agent-argument passthrough. env exec keeps Docker's environment
+# resolution while allowing Pi arguments. The image and native exec both use
+# this wrapper, which owns the provider, model, and bundled extension defaults.
+terminal_args=(-i)
+if [[ -t 0 && -t 1 ]]; then terminal_args+=(-t); fi
+sbx env exec "${terminal_args[@]}" "${environment_paths[@]}" "${native_args[@]}" -- /opt/sbx-kit-pi/scripts/container-entrypoint "${pi_args[@]}"

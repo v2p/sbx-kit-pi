@@ -47,10 +47,6 @@ const args = process.argv.slice(2);
 fs.appendFileSync(process.env.MOCK_LOG, JSON.stringify(args) + '\\n');
 if (args[0] === 'ls') {
   if (fs.existsSync(process.env.MOCK_STATE)) console.log(fs.readFileSync(process.env.MOCK_STATE, 'utf8'));
-} else if (args[0] === 'rm') fs.rmSync(process.env.MOCK_STATE, { force: true });
-else if (args[0] === 'run') {
-  if (process.env.MOCK_FAIL) process.exit(1);
-  fs.writeFileSync(process.env.MOCK_STATE, args[args.indexOf('--name') + 1]);
 } else if (args[0] === 'env') {
   if (args[1] === 'rm') fs.rmSync(process.env.MOCK_STATE, { force: true });
   if (args[1] === 'run') {
@@ -58,7 +54,14 @@ else if (args[0] === 'run') {
     const yaml = require(${JSON.stringify(path.join(root, "node_modules/yaml"))});
     let name;
     for (const arg of args.slice(2)) {
-      if (arg.endsWith('.yaml')) name = yaml.parse(fs.readFileSync(arg, 'utf8')).name ?? name;
+      if (!arg.endsWith('.yaml')) continue;
+      const value = yaml.parse(fs.readFileSync(arg, 'utf8'));
+      name = value.name ?? name;
+      if (process.env.MOCK_CODEX_AUTH && value.additionalWorkspaces?.[1]) {
+        const copy = require('node:path').join(value.additionalWorkspaces[1].path, 'codex-auth.json');
+        if (fs.readFileSync(copy, 'utf8') !== fs.readFileSync(process.env.MOCK_CODEX_AUTH, 'utf8')) process.exit(91);
+        if ((fs.statSync(copy).mode & 0o777) !== 0o600) process.exit(92);
+      }
     }
     fs.writeFileSync(process.env.MOCK_STATE, name || 'parameterized-name');
   }
@@ -93,38 +96,6 @@ else if (args[0] === 'run') {
   return { dir, workspace, subdir, manifest, global, env, run, show, status, calls };
 }
 
-test("launch migrates the historical environment agent, while inspection leaves it untouched", (t) => {
-  const f = fixture(t);
-  const file = path.join(f.workspace, "sbxenv.yaml");
-  const source = 'schemaVersion: "1"\nagent: pi-openai-codex\nworkspace: .\nkits: [./tools]\n';
-  const kit = path.join(f.workspace, "tools");
-  fs.mkdirSync(kit);
-  const spec = path.join(kit, "spec.yaml");
-  fs.writeFileSync(spec, 'schemaVersion: "2"\nkind: mixin\nname: tools\n');
-  fs.writeFileSync(file, source);
-  for (const args of [["config", "show"], ["status"], ["plan"]]) {
-    const result = f.run(args);
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(fs.readFileSync(file, "utf8"), source);
-    assert.equal(fs.existsSync(file + ".v2.bak"), false);
-    assert.equal(fs.existsSync(spec), true);
-  }
-  const result = f.run([], { SBX_PI_HOST_RPC_ALLOW: "off" });
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stderr, /Migrated/);
-  assert.equal(parseYaml(fs.readFileSync(file, "utf8")).agent, path.basename(root));
-  assert.equal(fs.readFileSync(file + ".v2.bak", "utf8"), source);
-  assert.equal(fs.existsSync(spec), false);
-  assert.equal(parseYaml(fs.readFileSync(path.join(kit, "tools.yaml"), "utf8")).schemaVersion, "3");
-  const again = f.run([], { SBX_PI_HOST_RPC_ALLOW: "off" });
-  assert.equal(again.status, 0, again.stderr);
-  assert.doesNotMatch(again.stderr, /Migrated/);
-  assert.equal(
-    f.calls().some((args) => args[0] === "rm" || (args[0] === "env" && args[1] === "rm")),
-    false,
-  );
-});
-
 test("host RPC policy is global-only with per-launch environment overrides", (t) => {
   const f = fixture(t);
   assert.equal(f.show().hostRpcAllow, "notification.send,network.request,file.access");
@@ -143,7 +114,10 @@ test("host RPC policy is global-only with per-launch environment overrides", (t)
   assert.equal(f.run().status, 0);
   assert.equal(fs.existsSync(path.join(f.env.XDG_STATE_HOME, "sbx-pi", "host-rpc")), false);
   fs.writeFileSync(f.manifest, "schema_version = 1\n[host_rpc]\nallow = []\n");
-  assert.match(f.run(["config", "show"]).stderr, /unknown setting host_rpc/);
+  assert.match(
+    f.run(["config", "show", "--config", "../sbx-pi.toml"]).stderr,
+    /unknown setting host_rpc/,
+  );
   fs.rmSync(f.manifest);
   for (const allow of ['["shell.run"]', '"off"']) {
     fs.writeFileSync(f.global, `schema_version = 1\n[host_rpc]\nallow = ${allow}\n`);
@@ -216,7 +190,7 @@ allow = ["network.request"]
     `#!/usr/bin/env node
 const fs = require('node:fs');
 const path = require('node:path');
-if (process.argv[2] === 'run') {
+if (process.argv[2] === 'env' && process.argv[3] === 'exec') {
   const base = path.join(process.env.HOME, 'pi-sessions-backup');
   const queue = path.join(base, fs.readdirSync(base)[0], '.host-rpc.requests.jsonl');
   fs.appendFileSync(queue, JSON.stringify({ jsonrpc: '2.0', sbxVersion: 1, id: 'consumer-test', session: 'test.jsonl', method: 'network.request', params: { host: 'example.com', reason: 'Review' } }) + '\\n');
@@ -239,7 +213,7 @@ test("alias writes preserve global host policy", (t) => {
   assert.equal(f.show().hostRpcAllow, "file.access");
 });
 
-test("config alias creates global aliases usable by show and init without invoking sbx", (t) => {
+test("config alias saves global aliases without invoking sbx", (t) => {
   const f = fixture(t);
   const result = f.run(["config", "alias", "node", "docker.io/acme/node:1"]);
   assert.equal(result.status, 0, result.stderr);
@@ -249,12 +223,6 @@ test("config alias creates global aliases usable by show and init without invoki
     { node: "docker.io/acme/node:1" },
   );
   assert.equal(fs.statSync(f.global).mode & 0o777, 0o600);
-  assert.deepEqual(f.show(["--kit", "@node"]).kits, ["docker.io/acme/node:1"]);
-  assert.equal(f.run(["init", "--kit", "@node"]).status, 0);
-  const environmentFile = f.show().environmentFiles[0];
-  assert.deepEqual(parseYaml(fs.readFileSync(environmentFile, "utf8")).kits, [
-    "docker.io/acme/node:1",
-  ]);
   assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
 });
 
@@ -277,7 +245,6 @@ test("config alias preserves global settings, resolves CLI paths, and requires e
   assert.deepEqual(config.host_rpc?.allow, []);
   assert.equal(config.kit_aliases?.node, "docker.io/acme/node:2");
   assert.equal(config.kit_aliases?.local, path.join(f.subdir, 'kits/tools "quoted"'));
-  assert.deepEqual(f.show(["--kit", "@local"]).kits, [config.kit_aliases?.local]);
   assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
   assert.equal(fs.existsSync(`${f.global}.lock`), false);
 });
@@ -330,14 +297,13 @@ test("config alias refuses locked files and symlinks without touching their targ
   assert.equal(fs.existsSync(`${f.global}.lock`), false);
 });
 
-test("init creates a native environment in the current directory without inheriting a parent", (t) => {
+test("first launch saves a native environment; later launches reuse it without rewriting", (t) => {
   const f = fixture(t);
-  const parentContent = 'schema_version = 1\nkits = ["docker.io/acme/parent:1"]';
-  fs.writeFileSync(f.manifest, parentContent);
-  fs.writeFileSync(f.global, 'schema_version = 1\n[host_rpc]\nallow = ["notification.send"]');
-  const result = f.run(["init"], { SBX_PI_HOST_RPC_ALLOW: "off" });
-  assert.equal(result.status, 0, result.stderr);
   const file = path.join(f.subdir, "sbxenv.yaml");
+  assert.equal(fs.existsSync(file), false);
+  const result = f.run([], { SBX_PI_HOST_RPC_ALLOW: "off" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /Created/);
   const content = fs.readFileSync(file, "utf8");
   assert.deepEqual(parseYaml(content), {
     schemaVersion: "1",
@@ -346,16 +312,21 @@ test("init creates a native environment in the current directory without inherit
     kits: [],
   });
   assert.equal(fs.existsSync(path.join(f.subdir, "sbx-pi.toml")), false);
-  assert.ok(result.stdout.includes(file));
-  assert.ok(result.stdout.includes(content));
-  assert.equal(fs.readFileSync(f.manifest, "utf8"), parentContent);
-  assert.equal(f.show().workspace, f.subdir);
-  assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
-  assert.equal(fs.existsSync(f.env.XDG_STATE_HOME), false);
-  assert.equal(fs.existsSync(path.join(f.env.HOME, "pi-sessions-backup")), false);
+  assert.equal(parseYaml(content).host_rpc, undefined);
+  const modified = fs.statSync(file).mtimeMs;
+  const again = f.run(["--continue"], { SBX_PI_HOST_RPC_ALLOW: "off" });
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(fs.readFileSync(file, "utf8"), content);
+  assert.equal(fs.statSync(file).mtimeMs, modified);
+  assert.equal(
+    f.calls().some((call) => call[0] === "run" || call[1] === "rm"),
+    false,
+  );
+  assert.deepEqual(f.calls().at(-1)?.slice(-1), ["--continue"]);
+  assert.equal(f.status().status, "exists");
 });
 
-test("init expands aliases and serializes portable kit references that round-trip", (t) => {
+test("launch expands aliases and saves portable kit references for subsequent launches", (t) => {
   const f = fixture(t);
   const localKit = path.join(f.subdir, "kits", 'tools "quoted"');
   fs.mkdirSync(localKit, { recursive: true });
@@ -365,7 +336,6 @@ test("init expands aliases and serializes portable kit references that round-tri
     `schema_version = 1\n[kit_aliases]\nnode = "docker.io/acme/node:1"\nlocal = ${JSON.stringify(localKit)}\n`,
   );
   const result = f.run([
-    "init",
     "--kit",
     "@node",
     "--kit",
@@ -387,34 +357,48 @@ test("init expands aliases and serializes portable kit references that round-tri
     },
   );
   assert.deepEqual(f.show().environmentFiles, [path.join(f.subdir, "sbxenv.yaml")]);
-  assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
+  const file = path.join(f.subdir, "sbxenv.yaml");
+  const saved = fs.readFileSync(file, "utf8");
+  fs.rmSync(f.global);
+  assert.equal(f.run([], { SBX_PI_HOST_RPC_ALLOW: "off" }).status, 0);
+  assert.equal(fs.readFileSync(file, "utf8"), saved);
 });
 
-test("init refuses existing files, directories, and symlinks without modifying them", (t) => {
+test("kit edits refuse malformed YAML, directories, symlinks, and locks without modifying data", (t) => {
   const f = fixture(t);
   const file = path.join(f.subdir, "sbxenv.yaml");
   const original = "not even valid YAML: [";
   fs.writeFileSync(file, original);
-  let result = f.run(["init"]);
-  assert.equal(result.status, 2);
-  assert.match(result.stderr, /Refusing to overwrite/);
+  assert.equal(f.run(["--kit", "tools"]).status, 2);
   assert.equal(fs.readFileSync(file, "utf8"), original);
   fs.rmSync(file);
   fs.mkdirSync(file);
-  result = f.run(["init"]);
-  assert.equal(result.status, 2);
+  assert.equal(f.run(["--kit", "tools"]).status, 2);
   assert.ok(fs.statSync(file).isDirectory());
   fs.rmdirSync(file);
-  const target = path.join(f.dir, "absent-target");
-  fs.symlinkSync(target, file);
-  result = f.run(["init"]);
-  assert.equal(result.status, 2);
-  assert.equal(fs.readlinkSync(file), target);
-  assert.equal(fs.existsSync(target), false);
+  for (const exists of [false, true]) {
+    const target = path.join(f.dir, "target.yaml");
+    if (exists) {
+      fs.writeFileSync(target, 'schemaVersion: "1"\nworkspace: .\n');
+    }
+    fs.symlinkSync(target, file);
+    assert.equal(f.run(["--kit", "tools"]).status, 2);
+    assert.equal(fs.readlinkSync(file), target);
+    if (exists) {
+      assert.equal(fs.readFileSync(target, "utf8"), 'schemaVersion: "1"\nworkspace: .\n');
+    } else {
+      assert.equal(fs.existsSync(target), false);
+    }
+    fs.unlinkSync(file);
+  }
+  fs.writeFileSync(`${file}.lock`, "another writer");
+  assert.equal(f.run(["--kit", "tools"]).status, 2);
+  assert.equal(fs.readFileSync(`${file}.lock`, "utf8"), "another writer");
+  assert.equal(fs.existsSync(file), false);
   assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
 });
 
-test("init rejects host-only paths and unsupported options before writing", (t) => {
+test("launch rejects invalid kit references before creating configuration or invoking Docker", (t) => {
   const f = fixture(t);
   fs.writeFileSync(f.global, 'schema_version = 1\n[kit_aliases]\nhost = "./private-tools"');
   for (const args of [
@@ -422,29 +406,34 @@ test("init rejects host-only paths and unsupported options before writing", (t) 
     ["--kit", "../outside"],
     ["--kit", path.join(f.dir, "host-tools")],
     ["--kit", "@missing"],
-    ["--config", "../sbx-pi.toml"],
-    ["--no-config"],
-    ["--recreate"],
-    ["--import-codex-auth"],
-    ["--continue"],
+    ["--kit", "bad\nkit"],
+    ["--kit", "--recreate"],
     ["--kit"],
   ]) {
-    const result = f.run(["init", ...args]);
+    const result = f.run(args);
     assert.equal(result.status, 2, args.join(" "));
     assert.equal(fs.existsSync(path.join(f.subdir, "sbxenv.yaml")), false);
   }
   assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
 });
 
-test("first runs suggest init without creating a manifest; subsequent attachments do not", (t) => {
+test("inspection never creates project configuration and rejects mutation options", (t) => {
   const f = fixture(t);
-  const first = f.run([], { SBX_PI_HOST_RPC_ALLOW: "off" });
-  assert.equal(first.status, 0, first.stderr);
-  assert.match(first.stderr, /Run sbx-pi init to persist/);
-  assert.equal(fs.existsSync(path.join(f.subdir, "sbx-pi.toml")), false);
-  const attached = f.run([], { SBX_PI_HOST_RPC_ALLOW: "off" });
-  assert.equal(attached.status, 0, attached.stderr);
-  assert.doesNotMatch(attached.stderr, /Run sbx-pi init to persist/);
+  const file = path.join(f.subdir, "sbxenv.yaml");
+  assert.equal(f.show().workspace, f.subdir);
+  assert.equal(f.status().status, "not-created");
+  assert.equal(f.run(["plan"]).status, 2);
+  for (const command of [["config", "show"], ["status"], ["plan"]]) {
+    for (const option of [["--kit", "tools"], ["--no-kits"]]) {
+      const result = f.run([...command, ...option]);
+      assert.equal(result.status, 2);
+      assert.match(result.stderr, /only accepted when launching/);
+    }
+  }
+  assert.equal(fs.existsSync(file), false);
+  assert.equal(fs.existsSync(f.env.XDG_STATE_HOME), false);
+  assert.equal(fs.existsSync(path.join(f.env.HOME, "pi-sessions-backup")), false);
+  assert.deepEqual(f.calls(), [["ls", "-q"]]);
 });
 
 test("installed user command resolves configuration from a different project", (t) => {
@@ -473,31 +462,16 @@ test("installed user command resolves configuration from a different project", (
   assert.equal(fs.existsSync(path.join(bindir, "sbx-pi")), false);
 });
 
-test("discovers project root and resolves TOML paths", (t) => {
+test("kit edits use the discovered project root, resolving CLI paths from the invocation directory", (t) => {
   const f = fixture(t);
-  fs.writeFileSync(
-    f.global,
-    'schema_version = 1\n[kit_aliases]\nnode = "docker.io/acme/node:1"\nlocal = "./kits/tools"\n',
-  );
-  fs.writeFileSync(
-    f.manifest,
-    '# Shared project\nschema_version = 1\nkits = [\n "./kits/project",\n "docker.io/acme/java:2",\n]\n',
-  );
-  const config = f.show();
-  assert.equal(config.workspace, f.workspace);
-  assert.deepEqual(config.kits, [path.join(f.workspace, "kits/project"), "docker.io/acme/java:2"]);
-  const cli = f.show(["--kit", "@node", "--kit", "@local", "--kit", "./cli"]);
-  assert.deepEqual(cli.kits, [
-    "docker.io/acme/node:1",
-    path.join(path.dirname(f.global), "kits/tools"),
-    path.join(f.subdir, "cli"),
-  ]);
-  assert.deepEqual(f.show(["--no-kits"]).kits, []);
-  const disabled = f.show(["--no-config"]);
-  assert.equal(disabled.workspace, f.subdir);
-  assert.deepEqual(disabled.kits, []);
+  fs.writeFileSync(f.manifest, "schema_version = 1\n");
+  assert.equal(f.show().workspace, f.workspace);
   assert.equal(f.show(["--config", "../sbx-pi.toml"]).workspace, f.workspace);
-  assert.equal(fs.existsSync(f.env.MOCK_LOG), false, "config show must not invoke sbx");
+  const result = f.run(["--kit", "./tools"], { SBX_PI_HOST_RPC_ALLOW: "off" });
+  assert.equal(result.status, 0, result.stderr);
+  const file = path.join(f.workspace, "sbxenv.yaml");
+  assert.deepEqual(parseYaml(fs.readFileSync(file, "utf8")).kits, ["./nested/tools"]);
+  assert.equal(fs.existsSync(path.join(f.subdir, "sbxenv.yaml")), false);
 });
 
 test("validates manifests and aliases before invoking Docker Sandbox", (t) => {
@@ -520,67 +494,144 @@ test("validates manifests and aliases before invoking Docker Sandbox", (t) => {
   fs.writeFileSync(f.global, 'schema_version = 1\n[kit_aliases]\na = "@b"');
   assert.match(f.run().stderr, /aliases cannot reference aliases/);
   fs.rmSync(f.global);
-  assert.equal(f.run(["--config", "../sbx-pi.toml", "--no-config"]).status, 2);
+  assert.equal(f.run(["--config", "../sbx-pi.toml", "--env", ".."]).status, 2);
   assert.equal(f.run([], { SBX_PI_HOST_RPC_ALLOW: "__proto__" }).status, 2);
   assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
 });
 
-test("tracks applied kits, warns on drift, and recreates using the persisted manifest", (t) => {
+test("kit replacement persists before refusing to change an existing sandbox without recreation", (t) => {
   const f = fixture(t);
-  fs.writeFileSync(f.manifest, 'schema_version = 1\nkits = ["docker.io/acme/node:1"]');
-  assert.equal(f.status().status, "not-created");
-  const first = f.run();
-  assert.equal(first.status, 0, first.stderr);
-  assert.match(first.stdout, /docker.io\/acme\/node:1/);
-  const create = f.calls().find((call) => call[0] === "run");
-  assert.ok(create);
-  assert.ok(create.includes(f.workspace));
-  assert.deepEqual(create.slice(create.indexOf("--kit"), create.indexOf(root)), [
-    "--kit",
-    "docker.io/acme/node:1",
-  ]);
-  assert.equal(create[create.indexOf(root) + 1], f.workspace);
-  assert.equal(f.status().status, "current");
-  fs.appendFileSync(f.manifest, "\n# A comment does not require recreation\n");
-  assert.equal(f.status().status, "current");
-  const stateFile = f.show().stateFile;
-  assert.equal(fs.statSync(stateFile).mode & 0o777, 0o600);
-  fs.writeFileSync(f.manifest, 'schema_version = 1\nkits = ["docker.io/acme/node:2", "./tools"]');
-  assert.equal(f.status().status, "drifted");
-  const attached = f.run(["--continue"]);
-  assert.equal(attached.status, 0, attached.stderr);
-  assert.match(attached.stderr, /Attaching without changes/);
-  const attachCall = f.calls().at(-1);
-  assert.ok(attachCall);
-  assert.equal(attachCall.includes("--kit"), false);
-  assert.equal(f.status().appliedKits?.[0], "docker.io/acme/node:1");
-  const update = f.run(["--recreate"]);
-  assert.equal(update.status, 0, update.stderr);
-  assert.equal(f.status().status, "current");
-  assert.deepEqual(f.status().appliedKits, [
+  const file = path.join(f.subdir, "sbxenv.yaml");
+  assert.equal(f.run(["--kit", "docker.io/acme/node:1"]).status, 0);
+  const before = f.calls().length;
+  const result = f.run(["--kit", "docker.io/acme/node:2", "--kit", "./tools"]);
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /Kit selection saved.*--recreate/);
+  assert.deepEqual(parseYaml(fs.readFileSync(file, "utf8")).kits, [
     "docker.io/acme/node:2",
-    path.join(f.workspace, "tools"),
+    "./tools",
   ]);
-  assert.equal(f.calls().filter((call) => call[0] === "rm").length, 1);
+  assert.deepEqual(f.calls().slice(before), [["ls", "-q"]]);
+  const recreated = f.run(["--recreate"]);
+  assert.equal(recreated.status, 0, recreated.stderr);
+  assert.equal(f.calls().filter((call) => call[0] === "env" && call[1] === "rm").length, 1);
   const cleared = f.run(["--recreate", "--no-kits"]);
   assert.equal(cleared.status, 0, cleared.stderr);
-  assert.deepEqual(f.status().appliedKits, []);
-  assert.equal(f.status().status, "drifted", "CLI overrides do not rewrite the manifest");
+  assert.deepEqual(parseYaml(fs.readFileSync(file, "utf8")).kits, []);
+  assert.equal(f.run().status, 0);
+  assert.deepEqual(parseYaml(fs.readFileSync(file, "utf8")).kits, []);
 });
 
-test("unknown legacy state and failed recreation never claim a current configuration", (t) => {
+test("kit edits preserve unrelated YAML settings, comments, and file permissions", (t) => {
   const f = fixture(t);
-  fs.writeFileSync(f.manifest, "schema_version = 1");
-  fs.writeFileSync(f.env.MOCK_STATE, f.show().sandboxName!);
-  assert.equal(f.status().status, "unknown");
-  const attach = f.run();
-  assert.equal(attach.status, 0, attach.stderr);
-  assert.match(attach.stderr, /Applied configuration is unknown/);
-  assert.equal(f.run(["--recreate"]).status, 0);
-  assert.equal(f.status().status, "current");
-  assert.equal(f.run(["--recreate"], { MOCK_FAIL: "1" }).status, 1);
-  assert.equal(fs.existsSync(f.show().stateFile), false);
-  assert.equal(f.status().status, "not-created");
+  const file = path.join(f.workspace, "sbxenv.yaml");
+  const source =
+    '# Project configuration\nschemaVersion: "1"\nworkspace: . # keep this comment\nports: [{sandbox: 3000, host: 8080}]\nkits:\n  - source: ./old-kit\n    args: {version: pinned}\n';
+  fs.writeFileSync(file, source, { mode: 0o600 });
+  // Editing from a more restrictive shell must not change existing permissions.
+  fs.chmodSync(file, 0o640);
+  const result = spawnSync(
+    "bash",
+    [
+      "-c",
+      'umask 077; exec "$@"',
+      "test",
+      path.join(root, "scripts/run"),
+      "--kit",
+      "./tools",
+      "--kit",
+      "docker.io/acme/node:2",
+    ],
+    { cwd: f.subdir, env: f.env, encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const saved = fs.readFileSync(file, "utf8");
+  assert.match(saved, /# Project configuration/);
+  assert.match(saved, /# keep this comment/);
+  assert.deepEqual(parseYaml(saved), {
+    ...parseYaml(source),
+    kits: ["./nested/tools", "docker.io/acme/node:2"],
+  });
+  assert.equal(fs.statSync(file).mode & 0o777, 0o640);
+  const modified = fs.statSync(file).mtimeMs;
+  const same = f.run(["--kit", "./tools", "--kit", "docker.io/acme/node:2"]);
+  assert.equal(same.status, 0, same.stderr);
+  assert.equal(fs.statSync(file).mtimeMs, modified);
+  assert.equal(fs.existsSync(`${file}.lock`), false);
+});
+
+test("an explicit single environment file receives kit edits instead of the invocation directory", (t) => {
+  const f = fixture(t);
+  const file = path.join(f.workspace, "custom.yaml");
+  fs.writeFileSync(file, 'schemaVersion: "1"\nworkspace: ./src\n');
+  const result = f.run(["--env", "../custom.yaml", "--kit", "./tools"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(parseYaml(fs.readFileSync(file, "utf8")), {
+    schemaVersion: "1",
+    workspace: "./src",
+    kits: ["./nested/tools"],
+  });
+  assert.equal(fs.existsSync(path.join(f.subdir, "sbxenv.yaml")), false);
+});
+
+test("layered kit edits fail without rewriting any layer or invoking Docker", (t) => {
+  const f = fixture(t);
+  const base = path.join(f.workspace, "base.yaml");
+  const local = path.join(f.workspace, "local.yaml");
+  const source = 'schemaVersion: "1"\nkits: [./tools]\n';
+  fs.writeFileSync(base, source);
+  fs.writeFileSync(local, "env: {LOG_LEVEL: debug}\n");
+  for (const option of [["--kit", "tools"], ["--no-kits"]]) {
+    const result = f.run(["--env", base, "--env", local, ...option]);
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /single environment file/);
+  }
+  assert.equal(fs.readFileSync(base, "utf8"), source);
+  assert.equal(fs.readFileSync(local, "utf8"), "env: {LOG_LEVEL: debug}\n");
+  assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
+});
+
+test("parameterized sandbox names require explicit recreation when saving changed kits", (t) => {
+  const f = fixture(t);
+  const file = path.join(f.workspace, "sbxenv.yaml");
+  fs.writeFileSync(file, 'schemaVersion: "1"\nname: "${{ env.args.name }}"\nkits: []\n');
+  const result = f.run(["--kit", "tools"], { SBX_PI_HOST_RPC_ALLOW: "off" });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /Kit selection saved.*--recreate/);
+  assert.deepEqual(parseYaml(fs.readFileSync(file, "utf8")).kits, ["tools"]);
+  assert.deepEqual(f.calls(), [["ls", "-q"]]);
+});
+
+test("launcher delivers default notifications without private Pi arguments", (t) => {
+  const f = fixture(t);
+  const output = path.join(f.dir, "notification.json");
+  fs.writeFileSync(
+    path.join(f.dir, "bin/notify-send"),
+    `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(output)}, JSON.stringify(process.argv.slice(2)));\n`,
+    { mode: 0o755 },
+  );
+  fs.writeFileSync(
+    path.join(f.dir, "bin/sbx"),
+    `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+if (process.argv[2] === 'env' && process.argv[3] === 'exec') {
+  const base = path.join(process.env.HOME, 'pi-sessions-backup');
+  const queue = path.join(base, fs.readdirSync(base)[0], '.host-rpc.requests.jsonl');
+  fs.appendFileSync(queue, JSON.stringify({ jsonrpc: '2.0', sbxVersion: 1, id: 'notify-test', session: 'test.jsonl', method: 'notification.send', params: { title: 'Pi finished', body: 'Done' } }) + '\\n');
+  if (process.argv.some((arg) => arg.startsWith('--sbx-pi-'))) process.exit(93);
+}
+`,
+    { mode: 0o755 },
+  );
+  const result = f.run([], { SBX_PI_HOST_RPC_ALLOW: "notification.send" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(output, "utf8")), [
+    "--app-name=Pi",
+    "--",
+    "Pi finished",
+    "Done",
+  ]);
 });
 
 test("native YAML owns sandbox settings while TOML supplies only Pi preferences", (t) => {
@@ -794,6 +845,7 @@ test("native Codex import mounts only a temporary private copy and is creation-o
   fs.writeFileSync(path.join(codexHome, "auth.json"), auth);
   const result = f.run(["--import-codex-auth"], {
     CODEX_HOME: codexHome,
+    MOCK_CODEX_AUTH: path.join(codexHome, "auth.json"),
     SBX_PI_HOST_RPC_ALLOW: "off",
   });
   assert.equal(result.status, 0, result.stderr);
@@ -809,22 +861,29 @@ test("native Codex import mounts only a temporary private copy and is creation-o
   const refused = f.run(["--import-codex-auth"], { CODEX_HOME: codexHome });
   assert.equal(refused.status, 2);
   assert.match(refused.stderr, /use --recreate to import/);
+  const failed = f.run(["--recreate", "--import-codex-auth"], {
+    CODEX_HOME: codexHome,
+    MOCK_FAIL: "1",
+    SBX_PI_HOST_RPC_ALLOW: "off",
+  });
+  assert.equal(failed.status, 1);
+  assert.equal(fs.existsSync(path.join(mounts[1].path, "codex-auth.json")), false);
+  assert.equal(fs.readFileSync(path.join(codexHome, "auth.json"), "utf8"), auth);
+  assert.equal(fs.existsSync(f.show().stateFile), false);
 });
 
-test("native projects reject duplicate sandbox configuration and unsupported agents before Docker", (t) => {
+test("projects reject TOML kits and unsupported agents before Docker without rewriting files", (t) => {
   const f = fixture(t);
   const environment = path.join(f.workspace, "sbxenv.yaml");
   fs.writeFileSync(environment, `schemaVersion: "1"\nagent: ${path.basename(root)}\n`);
   fs.writeFileSync(f.manifest, "schema_version = 1\nkits = []");
-  assert.match(f.run().stderr, /configure kits in YAML/);
+  assert.match(f.run().stderr, /unknown setting kits/);
   fs.writeFileSync(f.manifest, "schema_version = 1");
-  for (const args of [["--kit", "node"], ["--no-kits"]]) {
-    assert.equal(f.run(args).status, 2);
+  for (const agent of ["claude", "pi-openai-codex"]) {
+    const source = `schemaVersion: "1"\nagent: ${agent}\n`;
+    fs.writeFileSync(environment, source);
+    assert.match(f.run(["--kit", "tools"]).stderr, /use sbx env for other agents/);
+    assert.equal(fs.readFileSync(environment, "utf8"), source);
   }
-  fs.writeFileSync(environment, 'schemaVersion: "1"\nagent: claude\n');
-  assert.match(f.run().stderr, /use sbx env for other agents/);
-  assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
-  fs.rmSync(environment);
-  assert.equal(f.run(["--env-arg", "name=test"]).status, 2);
   assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
 });

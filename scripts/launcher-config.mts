@@ -9,11 +9,8 @@ import { parse, stringify } from "smol-toml";
 import {
   inspectEnvironment,
   writeEnvironmentOverlay,
-  initializeEnvironment,
-  writeNetworkKit,
+  saveEnvironment,
 } from "./launcher-environment.mts";
-
-import { migrateProject } from "./launcher-migration.mts";
 import { isMethod } from "./host-rpc-protocol.mts";
 import { allowedMethods } from "./host-rpc-listener.mts";
 import { resolveHandlers } from "./host-rpc-handlers.mts";
@@ -42,7 +39,7 @@ function load(file: string, global = false): Preferences {
   }
   const allowed = global
     ? ["schema_version", "kit_aliases", "host_rpc"]
-    : ["schema_version", "kits", "network"];
+    : ["schema_version", "network"];
   for (const key of Object.keys(config)) {
     if (!allowed.includes(key)) {
       throw new Error(`${file}: unknown setting ${key}`);
@@ -76,12 +73,6 @@ function load(file: string, global = false): Preferences {
       throw new Error(`${file}: network must contain only an allow array`);
     }
     config.network.allow.forEach((value) => string(value, `${file}: network host`));
-  }
-  if (config.kits !== undefined) {
-    if (!Array.isArray(config.kits)) {
-      throw new Error(`${file}: kits must be an array`);
-    }
-    config.kits.forEach((value) => string(value, `${file}: kit`));
   }
   if (config.kit_aliases !== undefined) {
     if (!isObject(config.kit_aliases)) {
@@ -170,35 +161,23 @@ function createAlias(args: string[]): void {
   console.log(`Saved @${name} = ${JSON.stringify(ref)} in ${file}`);
 }
 
-function resolve(args: string[], initialize = false): ResolvedConfig {
+function resolve(args: string[], launch = false): ResolvedConfig {
   const cwd = fs.realpathSync(process.cwd());
   let projectFile: string | undefined;
   const environmentFiles: string[] = [];
   const nativeArguments: string[] = [];
-  let disabled = initialize;
   let cliKits: string[] | undefined;
   let cliHosts: string[] | undefined;
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
       case "--config":
-        if (initialize) {
-          throw new Error(
-            "init always creates sbxenv.yaml in the current directory; --config is not supported",
-          );
-        }
         projectFile = path.resolve(cwd, string(args[++i], "--config"));
         break;
       case "--allow-host":
-        if (initialize) {
-          throw new Error("init does not accept --allow-host; use sbx-pi.toml");
-        }
         (cliHosts ??= []).push(string(args[++i], "--allow-host"));
         break;
       case "--env-arg":
       case "--env-args-file": {
-        if (initialize) {
-          throw new Error("init does not accept environment arguments");
-        }
         const option = args[i];
         const value = string(args[++i], option);
         nativeArguments.push(
@@ -208,9 +187,6 @@ function resolve(args: string[], initialize = false): ResolvedConfig {
         break;
       }
       case "--env": {
-        if (initialize) {
-          throw new Error("init does not accept --env");
-        }
         let file = path.resolve(cwd, string(args[++i], "--env"));
         if (fs.statSync(file).isDirectory()) {
           file = path.join(file, "sbxenv.yaml");
@@ -218,12 +194,6 @@ function resolve(args: string[], initialize = false): ResolvedConfig {
         environmentFiles.push(file);
         break;
       }
-      case "--no-config":
-        if (initialize) {
-          throw new Error("init does not discover project manifests; --no-config is not supported");
-        }
-        disabled = true;
-        break;
       case "--kit":
         (cliKits ??= []).push(string(args[++i], "--kit"));
         break;
@@ -233,9 +203,6 @@ function resolve(args: string[], initialize = false): ResolvedConfig {
       default:
         throw new Error(`Unknown configuration option: ${args[i]}`);
     }
-  }
-  if (disabled && (projectFile || environmentFiles.length)) {
-    throw new Error("--config/--env and --no-config cannot be combined");
   }
   if (projectFile && environmentFiles.length) {
     throw new Error("--config and --env cannot be combined; put sbx-pi.toml beside sbxenv.yaml");
@@ -247,7 +214,7 @@ function resolve(args: string[], initialize = false): ResolvedConfig {
     if (fs.existsSync(candidate)) {
       projectFile = candidate;
     }
-  } else if (!disabled && !projectFile) {
+  } else if (!projectFile) {
     let dir = cwd;
     while (true) {
       const candidate = path.join(dir, "sbx-pi.toml");
@@ -269,26 +236,28 @@ function resolve(args: string[], initialize = false): ResolvedConfig {
       dir = parent;
     }
   }
-  if (!disabled && projectFile && !environmentFiles.length) {
-    const sibling = path.join(path.dirname(projectFile), "sbxenv.yaml");
-    if (fs.existsSync(sibling)) {
-      environmentFiles.push(sibling);
-    }
+  const explicitEnvironment = environmentFiles.length > 0;
+  if (!environmentFiles.length) {
+    environmentFiles.push(path.join(projectDirectory, "sbxenv.yaml"));
   }
   const globalFile = globalConfigFile();
   const global: Partial<Preferences> = fs.existsSync(globalFile) ? load(globalFile, true) : {};
   const project: Partial<Preferences> = projectFile ? load(projectFile) : {};
   const workspace = fs.realpathSync(projectDirectory);
-  const environment = environmentFiles.length
-    ? inspectEnvironment(environmentFiles, path.basename(root))
-    : null;
+  const environmentExists = fs.existsSync(environmentFiles[0]);
+  const environment =
+    explicitEnvironment || environmentExists
+      ? inspectEnvironment(environmentFiles, path.basename(root))
+      : {};
   const networkAllow = cliHosts ?? project.network?.allow ?? [];
-  if (!environment && nativeArguments.length) {
-    throw new Error("Environment arguments require sbxenv.yaml or --env");
-  }
-  if (environment && (project.kits !== undefined || cliKits !== undefined)) {
+  if (cliKits !== undefined && !launch) {
     throw new Error(
-      "With sbxenv.yaml, configure kits in YAML; remove TOML kits and do not use --kit/--no-kits",
+      "--kit/--no-kits write project configuration and are only accepted when launching",
+    );
+  }
+  if (cliKits !== undefined && environmentFiles.length !== 1) {
+    throw new Error(
+      "--kit/--no-kits require a single environment file; edit layered YAML explicitly",
     );
   }
   const resolveReference = (ref: string, dir: string): string => {
@@ -301,12 +270,23 @@ function resolve(args: string[], initialize = false): ResolvedConfig {
     }
     return ref.startsWith(".") || path.isAbsolute(ref) ? path.resolve(dir, ref) : ref;
   };
-  // CLI paths are relative to the invocation directory.
-  const kits = (cliKits ?? project.kits ?? []).map((ref) => {
-    if (cliKits !== undefined && !ref.startsWith("@")) {
-      return workspace !== cwd && ref.startsWith(".") ? path.resolve(cwd, ref) : ref;
+  // Persist concrete, portable references. CLI paths are invocation-relative;
+  // aliases resolve beside personal configuration, never beside the project.
+  const kits = cliKits?.map((value) => {
+    const ref = resolveReference(value, cwd);
+    if (ref.startsWith("--")) {
+      throw new Error(`Invalid kit reference: ${ref}`);
     }
-    return resolveReference(ref, workspace);
+    if (!path.isAbsolute(ref)) {
+      return ref;
+    }
+    const relative = path.relative(workspace, ref);
+    if (relative === ".." || relative.startsWith(`..${path.sep}`)) {
+      throw new Error(
+        `Cannot persist host-only kit path: ${ref}. Place local kits inside the project or use a pinned remote reference.`,
+      );
+    }
+    return `./${relative.split(path.sep).join("/")}`;
   });
   const hostRpcValue = process.env.SBX_PI_HOST_RPC_ALLOW ?? global.host_rpc?.allow?.join(",");
   const hostRpcAllow = [...allowedMethods(hostRpcValue, true)].join(",") || "off";
@@ -331,17 +311,20 @@ function resolve(args: string[], initialize = false): ResolvedConfig {
   const fingerprint = hash(
     JSON.stringify({
       workspace,
-      kits: kits.map((ref) => resolveReference(ref, workspace)),
       baseKitFingerprint,
       networkAllow,
     }),
   );
+  const kitsChanged =
+    launch && (!environmentExists || kits !== undefined)
+      ? saveEnvironment(environmentFiles[0], kits, path.basename(root))
+      : false;
   return {
     schemaVersion: 1,
     workspace,
     projectFile: projectFile ?? null,
     globalFile: fs.existsSync(globalFile) ? globalFile : null,
-    kits,
+    kitsChanged,
     environmentFiles,
     nativeArguments,
     networkAllow,
@@ -357,28 +340,9 @@ function resolve(args: string[], initialize = false): ResolvedConfig {
       process.env.XDG_STATE_HOME || path.join(home, ".local", "state"),
       "sbx-pi",
       "sandboxes",
-      `${environment ? `${defaultSandboxName}-env-${hash(JSON.stringify(environmentFiles)).slice(0, 12)}` : defaultSandboxName}.json`,
+      `${defaultSandboxName}-env-${hash(JSON.stringify(environmentFiles)).slice(0, 12)}.json`,
     ),
   };
-}
-
-function initializeProject(args: string[]): void {
-  const config = resolve(args, true);
-  const file = path.join(config.workspace, "sbxenv.yaml");
-  const kits = config.kits.map((ref) => {
-    if (!ref.startsWith(".") && !path.isAbsolute(ref)) {
-      return ref;
-    }
-    const relative = path.relative(config.workspace, path.resolve(config.workspace, ref));
-    if (relative === ".." || relative.startsWith(`..${path.sep}`)) {
-      throw new Error(
-        `Cannot persist host-only kit path: ${ref}. Place local kits inside the project or use a pinned remote reference.`,
-      );
-    }
-    return `./${relative.split(path.sep).join("/")}`;
-  });
-  const content = initializeEnvironment(file, kits, path.basename(root));
-  console.log(`Created ${file}\n\n${content}`);
 }
 
 function applied(config: ResolvedConfig): AppliedConfig | null {
@@ -397,29 +361,16 @@ try {
   const [command, ...args] = process.argv.slice(2);
   if (command === "alias") {
     createAlias(args);
-  } else if (command === "init") {
-    initializeProject(args);
-  } else if (
-    ["fields", "environment", "network-kit", "record", "compare", "forget"].includes(command)
-  ) {
+  } else if (["fields", "environment", "record", "compare", "forget"].includes(command)) {
     const config = JSON.parse(fs.readFileSync(args[0], "utf8")) as ResolvedConfig;
     if (command === "fields") {
       process.stdout.write(
         [
           config.workspace,
           config.sandboxName,
-          config.projectFile ?? "",
-          config.environmentFiles.length ? "native" : "legacy",
           config.hostRpcAllow,
-          ...config.kits,
+          config.kitsChanged ? "1" : "0",
         ].join("\0") + "\0",
-      );
-    } else if (command === "network-kit") {
-      process.stdout.write(
-        writeNetworkKit(
-          config,
-          path.join(path.dirname(config.stateFile), path.basename(config.stateFile, ".json")),
-        ) ?? "",
       );
     } else if (command === "environment") {
       const overlay = writeEnvironmentOverlay(
@@ -442,74 +393,32 @@ try {
       fs.renameSync(temporary, config.stateFile);
     } else {
       const previous = applied(config);
-      if (config.environmentFiles.length) {
-        if (previous && previous.fingerprint !== config.fingerprint) {
-          console.error(
-            "Pi kit or supplemental network settings changed; run sbx-pi --recreate to apply. Docker manages native environment changes.",
-          );
-        }
-      } else if (!previous && config.projectFile) {
+      if (previous && previous.fingerprint !== config.fingerprint) {
         console.error(
-          "Applied configuration is unknown for this sandbox. Attaching without changes; run sbx-pi --recreate to apply the project manifest.",
-        );
-      } else if (previous && previous.fingerprint !== config.fingerprint) {
-        console.error(
-          "Project configuration differs from this sandbox. Attaching without changes; run sbx-pi --recreate to apply.",
+          "Pi kit or supplemental network settings changed; run sbx-pi --recreate to apply. Docker manages native environment changes.",
         );
       }
     }
   } else {
-    let config = resolve(args);
-    if (command === "launch") {
-      migrateProject(
-        config.environmentFiles,
-        config.kits.map((ref) => (ref.startsWith(".") ? path.resolve(config.workspace, ref) : ref)),
-        path.basename(root),
-      );
-      config = resolve(args);
-    }
+    const config = resolve(args, command === "launch");
     if (command === "resolve" || command === "show" || command === "launch") {
       console.log(JSON.stringify(config, null, 2));
     } else if (command === "status") {
       const names = execFileSync("sbx", ["ls", "-q"], { encoding: "utf8" }).split(/\r?\n/);
-      if (config.environmentFiles.length) {
-        console.log(
-          JSON.stringify(
-            {
-              sandbox: config.sandboxName,
-              projectDirectory: config.workspace,
-              status:
-                config.sandboxName === null
-                  ? "unknown"
-                  : names.includes(config.sandboxName)
-                    ? "exists"
-                    : "not-created",
-              managedBy: "sbx env",
-              environmentFiles: config.environmentFiles,
-              hint: "Use sbx-pi plan to inspect Docker's environment plan; creation-only changes require --recreate.",
-            },
-            null,
-            2,
-          ),
-        );
-        process.exit(0);
-      }
-      const previous = applied(config);
       console.log(
         JSON.stringify(
           {
             sandbox: config.sandboxName,
-            workspace: config.workspace,
-            status: !names.includes(config.sandboxName ?? "")
-              ? "not-created"
-              : !previous
+            projectDirectory: config.workspace,
+            status:
+              config.sandboxName === null
                 ? "unknown"
-                : previous.fingerprint === config.fingerprint
-                  ? "current"
-                  : "drifted",
-            appliedAt: previous?.appliedAt ?? null,
-            desiredKits: config.kits,
-            appliedKits: previous?.kits ?? null,
+                : names.includes(config.sandboxName)
+                  ? "exists"
+                  : "not-created",
+            managedBy: "sbx env",
+            environmentFiles: config.environmentFiles,
+            hint: "Use sbx-pi plan to inspect Docker's environment plan; creation-only changes require --recreate.",
           },
           null,
           2,

@@ -10,9 +10,15 @@ or changes Docker's global allowed sources or network policy.
 Discovery stops at the nearest ancestor containing either configuration file;
 both files in that directory are loaded. `--env PATH` selects native YAML files
 in merge order, or a directory's `sbxenv.yaml`. Pi TOML is loaded beside the first
-file. `--config PATH` selects TOML and its sibling YAML. `--no-config` disables
-project discovery. Explicit paths and `--no-config` are mutually exclusive;
-`--env` and `--config` are also mutually exclusive.
+file. `--config PATH` selects TOML and its sibling YAML.
+`--env` and `--config` are mutually exclusive.
+
+Every launch uses native YAML. If discovery finds no configuration, launch creates
+`sbxenv.yaml` in the current directory. If only Pi TOML exists, launch creates YAML
+beside it. Explicit `--env` files must already exist. Generated files select
+`workspace: .`, the Pi agent, and an empty mixin list unless `--kit` is supplied.
+Read-only `config show`, `status`, and `plan` never create project files; planning
+requires existing YAML.
 
 The first YAML file's directory is the project configuration directory, used for
 session persistence and the default sandbox name. It need not be the mounted
@@ -27,9 +33,9 @@ The launcher appends a stable private YAML layer under
 `$XDG_STATE_HOME/sbx-pi/sandboxes/` (default `~/.local/state/sbx-pi/sandboxes/`).
 This supplies the installed checkout's Pi kit and session mount, plus default
 agent and name values only when missing. Omitting `workspace` keeps native
-mountless behavior; `init` explicitly selects `workspace: .`. Native lists concatenate;
-user YAML is not copied or flattened. Apart from the one-time conversion below,
-it is not rewritten. Do not repeat the launcher's
+mountless behavior. Native lists concatenate; user YAML is not copied or flattened.
+Only explicit `--kit`/`--no-kits` options rewrite the project's kit list; other
+settings and comments are preserved. Do not repeat the launcher's
 Pi kit or its session mount in your project YAML.
 
 Native files should remain outside writable workspace trees, following Docker's
@@ -57,32 +63,6 @@ native configuration is current: inspect `plan`. Workspace, kit, port, credentia
 and resource changes take effect on recreation. Local kit contents and mutable
 references may change without a detectable plan difference.
 
-## Automatic project conversion
-
-Normal launches convert the project's old `agent: pi-openai-codex` to the
-checkout directory's name, keeping YAML comments and other environment settings.
-Environment files stay schema v1. The checkout's own workload is supplied by the
-updated tool; project files should not duplicate it.
-
-Referenced local schema-v2 mixins are converted from `spec.yaml` to
-`<kit-directory>.yaml`, since `spec.yaml` forces Docker's legacy parser. This
-covers the historical project-bootstrap format: install commands (including
-workspace working directory), network allowlists, and agent instructions.
-Network hosts remain allowed during both installation and runtime. Relative
-references resolve beside their environment file; TOML and CLI kit references
-use the launcher's usual resolution rules. Remote kits are never downloaded or
-rewritten by the converter; select v3 releases yourself.
-
-Every changed source gets an exact `.v2.bak` backup. Unsupported fields,
-non-mixin v2 kits, symlinked source files, existing backups, or conflicting v3
-descriptors stop conversion rather than discard user settings. All conversions
-are checked before writing. An interrupted conversion may require restoring the
-backups before retrying. Conversion does not recreate sandboxes: use
-`--recreate` explicitly to apply creation-time changes.
-
-`config show`, `status`, and `plan` do not convert project files. Run a normal
-launch before planning a project that still references v2 mixins.
-
 ## Supplemental network permissions
 
 Project TOML accepts:
@@ -104,8 +84,8 @@ removing the list does not remove the base kit's OAuth hosts or permissions from
 other kits. The launcher warns when recorded Pi-kit/network settings differ.
 
 Only project TOML can declare supplemental network permissions; personal config
-cannot silently inject them. Unknown TOML settings, invalid values, conflicting
-YAML/TOML kits, and unsupported TOML versions fail before Docker is invoked.
+cannot silently inject them. Unknown TOML settings, invalid values,
+and unsupported TOML versions fail before Docker is invoked.
 
 ## Host RPC permissions and handlers
 
@@ -132,7 +112,7 @@ See [Host RPC](host-rpc.md#attaching-consumer-handlers) for the command contract
 path resolution, limits, and examples, and the rest of that document for log
 retention, protocol details, and auditing limitations.
 
-## Aliases and initialization
+## Aliases and saved kit selections
 
 `sbx-pi config alias NAME KIT [--replace]` writes personal configuration at
 `$XDG_CONFIG_HOME/sbx-pi/global.toml` (default `~/.config/sbx-pi/global.toml`).
@@ -145,26 +125,29 @@ Writes are atomic, private, locked against concurrent writes, and refuse symlink
 personal files. TOML comments and formatting are not retained. Alias commands do
 not invoke Docker or modify project files.
 
-`init` exclusively creates `sbxenv.yaml` in the current directory. It expands
-aliases into concrete references, stores project-local paths relatively, rejects
-external local kit paths, and preserves remote references. It never copies parent
-settings, creates sessions/state directories, or writes personal preferences.
+On launch, repeated `--kit KIT` options replace the saved YAML `kits` list;
+`--no-kits` saves an empty list. Omitting both leaves existing selections untouched.
+CLI paths resolve from the invocation directory and are saved relative to the
+configuration directory. Aliases expand into concrete references; external local
+paths are rejected for portability. Remote references are preserved. YAML itself
+does not interpret aliases. TOML does not accept a `kits` setting.
+
+With a single explicit `--env`, that file receives the edit. With multiple layers,
+CLI kit edits are rejected rather than guessing which list to replace; edit YAML
+manually. Updates refuse symlinks and non-regular files, use a writer lock and
+atomic replacement, and retain file permissions and unrelated YAML settings.
+Invalid references or launcher settings fail before writing; Docker validates
+native sandbox settings during planning and provisioning.
+
+If CLI kit selections change and the sandbox already exists, the new list is
+saved but launch stops with a recreation instruction. Parameterized names also
+require explicit `--recreate` when CLI kit selections change, since the launcher
+cannot safely check existence. `--recreate --kit ...` saves and applies together.
+Recreation always requires that explicit flag and deletes sandbox-local changes.
+Manually edited YAML is reconciled by Docker; inspect `sbx-pi plan` before applying.
+
 The generated file expects `sbx-pi` to add its Pi kit; to use `sbx env` directly,
 include this checkout as a kit and configure session persistence yourself.
-
-## Legacy compatibility
-
-Without YAML, existing TOML kits and CLI `--kit`/`--no-kits` retain their original
-behavior. Move kits to YAML and remove TOML `kits` before combining both files.
-There are no new TOML fields for mounts, ports, variables, resources, secrets,
-or lifecycle commands; use native YAML instead.
-
-Legacy applied state records workspace, resolved kit references, the Pi kit
-specification, and supplemental network permissions. Its status values remain
-`not-created`, `unknown`, `current`, and `drifted`. Attaching does not apply
-creation-time changes; `--recreate` uses effective configuration, not recorded
-kits. Reference comparison cannot detect changes inside local kits or mutable
-Git/registry references.
 
 ## Custom command name
 

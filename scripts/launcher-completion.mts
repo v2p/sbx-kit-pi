@@ -50,7 +50,7 @@ function complete(args: string[]): Completion {
     if (!["show", "alias"].includes(mode)) {
       return ["words", []];
     }
-  } else if (["init", "status", "plan"].includes(previous[0])) {
+  } else if (["status", "plan"].includes(previous[0])) {
     mode = previous.shift()!;
   }
 
@@ -71,18 +71,9 @@ function complete(args: string[]): Completion {
     return ["words", previous.includes("--replace") ? [] : ["--replace"]];
   }
 
-  const options = ["--kit", "--no-kits", "--help"];
-  if (mode !== "init") {
-    options.push(
-      "--config",
-      "--no-config",
-      "--env",
-      "--env-arg",
-      "--env-args-file",
-      "--allow-host",
-    );
-  }
+  const options = ["--help", "--config", "--env", "--env-arg", "--env-args-file", "--allow-host"];
   if (mode === "run") {
+    options.unshift("--kit", "--no-kits");
     options.push("--recreate", "--import-codex-auth");
   }
   for (let i = 0; i < previous.length; i++) {
@@ -108,7 +99,7 @@ function complete(args: string[]): Completion {
   return [
     "words",
     mode === "run" && previous.length === 0
-      ? ["init", "config", "status", "plan", "completion", ...options]
+      ? ["config", "status", "plan", "completion", ...options]
       : options,
   ];
 }
