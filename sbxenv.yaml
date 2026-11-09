@@ -1,0 +1,5 @@
+# Docker Sandbox settings. sbx-pi adds its Pi kit and persistent session mount.
+schemaVersion: "1"
+agent: sbx-kit-pi
+workspace: .
+kits: []
