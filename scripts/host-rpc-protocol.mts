@@ -13,13 +13,23 @@ export const METHODS = Object.freeze({
   NOTIFICATION_SEND: "notification.send",
   NETWORK_REQUEST: "network.request",
   FILE_ACCESS: "file.access",
+  GIT_COMMIT: "git.commit",
 } as const);
+
+// Human review and host GPG pinentry need substantially longer than telemetry.
+export const COMMIT_TIMEOUT_MS = 180000;
+export const DEFAULT_METHODS: readonly Method[] = Object.freeze([
+  METHODS.NOTIFICATION_SEND,
+  METHODS.NETWORK_REQUEST,
+  METHODS.FILE_ACCESS,
+]);
 
 export type Method = (typeof METHODS)[keyof typeof METHODS];
 export interface Params {
   "notification.send": { title: string; body: string };
   "network.request": { host: string; reason: string };
   "file.access": { path: string; toolCallId: string; phase: "attempt" | "success" | "error" };
+  "git.commit": { message: string; expectedHead: string; expectedTree: string };
 }
 export interface RequestEnvelope {
   jsonrpc: "2.0";
@@ -34,7 +44,7 @@ type RequestMap = {
 };
 export type HostRequest<M extends Method = Method> = RequestMap[M];
 export interface HandlerResult {
-  status: "recorded" | "performed";
+  status: "recorded" | "performed" | "declined";
 }
 export type Response =
   | { jsonrpc: "2.0"; id: string; result: HandlerResult; error?: never }
@@ -94,6 +104,21 @@ export function validParams(method: string, params: unknown): boolean {
           params.host,
         )
       );
+    case METHODS.GIT_COMMIT:
+      return (
+        object(params, ["message", "expectedHead", "expectedTree"]) &&
+        typeof params.message === "string" &&
+        params.message.trim().length > 0 &&
+        params.message.length <= 2000 &&
+        // Permit multiline commit messages, but no other ASCII controls.
+        // eslint-disable-next-line no-control-regex
+        !/[\x00-\x09\x0b-\x1f\x7f]/.test(params.message) &&
+        typeof params.expectedHead === "string" &&
+        (params.expectedHead === "unborn" ||
+          /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(params.expectedHead)) &&
+        typeof params.expectedTree === "string" &&
+        /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(params.expectedTree)
+      );
     case METHODS.FILE_ACCESS:
       return (
         object(params, ["path", "toolCallId", "phase"]) &&
@@ -116,7 +141,7 @@ export function validResult(result: unknown): result is HandlerResult {
   return (
     isObject(result) &&
     Object.keys(result).length === 1 &&
-    (result.status === "recorded" || result.status === "performed")
+    (result.status === "recorded" || result.status === "performed" || result.status === "declined")
   );
 }
 
@@ -180,6 +205,7 @@ export async function callHost(
     join(sessionDir, RESPONSE_FILE),
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
   );
+  let id: string | undefined;
   try {
     const stat = await replies.stat();
     if (!stat.isFile() || stat.size > MAX_QUEUE_BYTES) {
@@ -188,13 +214,13 @@ export async function callHost(
     let position = stat.size;
     signal?.throwIfAborted();
     // The pair comes from the correlated CancellableMethodCall tuple above.
-    const id = await enqueue(sessionDir, session, ...([method, params] as MethodCall));
+    id = await enqueue(sessionDir, session, ...([method, params] as MethodCall));
     if (!id) {
       throw new Error("Host RPC listener is unavailable");
     }
     const decoder = new Records();
     const buffer = Buffer.alloc(16384);
-    const deadline = Date.now() + 5000;
+    const deadline = Date.now() + (method === METHODS.GIT_COMMIT ? COMMIT_TIMEOUT_MS + 5000 : 5000);
     while (Date.now() < deadline) {
       signal?.throwIfAborted();
       const size = (await replies.stat()).size;
@@ -232,6 +258,13 @@ export async function callHost(
       }
     }
     throw new Error(`Host RPC timed out (${id}); outcome unknown, do not automatically retry`);
+  } catch (error) {
+    if (id && signal?.aborted) {
+      throw new Error(`Host RPC aborted (${id}); outcome unknown, do not automatically retry`, {
+        cause: error,
+      });
+    }
+    throw error;
   } finally {
     await replies.close();
   }

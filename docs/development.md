@@ -37,6 +37,44 @@ Without Zsh those tests are skipped; `SBX_PI_REQUIRE_ZSH=1 npm test` requires th
 GitHub Actions installs Zsh and sets this flag so autoload registration and
 completion dispatch are tested automatically, without editing shell startup files.
 
+## Host Git review checks
+
+The reference host commit handler uses `scripts/host-rpc-handlers/git-review.py`,
+a native GTK 4 review widget launched with isolated Python. Python/GTK dependencies
+are host-only; do not add them to the sandbox image for this feature. To exercise
+the real widget headlessly on Debian/Ubuntu, install:
+
+```console
+sudo apt install python3 python3-gi gir1.2-gtk-4.0 xvfb xauth
+node --test tests/git-review.test.mts tests/host-git-commit.test.mts
+```
+
+`npm test` includes these tests. The GTK test explicitly skips if its bindings,
+`xvfb-run` or `xauth` are unavailable; a passing suite with that skip is not a GUI
+check. It covers literal/selectable/copyable, read-only text, diff colors, checkbox
+approval, cancellation and expiry. Git handler tests use disposable repositories
+and test doubles; they do not exercise your real signing key or desktop session.
+
+For host desktop integration, opt in and run the
+[host readiness test](host-rpc.md#test-host-readiness-without-committing) from a
+trusted repository root. Confirm the **dry run** label and **Test** button,
+checkbox gating, cancellation and configured signing/pinentry. The diagnostic
+must leave HEAD, branches, repository objects, index and working files unchanged;
+a successful test without signing enabled must explicitly say signing was not
+tested. It does not validate the live sandbox queue.
+
+Before releasing, also test real sandbox-to-host approval and decline in a
+throwaway trusted repository, HEAD/staged-tree mismatch rejection, and uncertain
+outcomes without automatic retries. Never use an unrequested real commit as a
+readiness check. Host handler/policy edits need relaunching; bundled
+extension/protocol edits need a published image and recreation, which deletes
+sandbox-local data. Test both fresh and existing-sandbox flows.
+
+The [README screenshot](../README.md#host-git-commits) captures the real
+`ReviewWindow` under Xvfb with this checkout's uncommitted README diff supplied as
+preview data. No staging, commit or signing operation was performed. See
+[image notes](images/README.md) before refreshing it.
+
 ## Images and releases
 
 The Makefile is limited to image release tasks and optional command installation:

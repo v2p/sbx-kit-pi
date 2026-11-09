@@ -39,6 +39,19 @@ export type RpcContracts = [
   >,
   Assert<Rejects<[string, string, "shell.exec", { command: string }], EnqueueArgs>>,
   Assert<
+    Accepts<
+      [
+        string,
+        string,
+        "git.commit",
+        { message: string; expectedHead: string; expectedTree: string },
+        AbortSignal,
+      ],
+      CallArgs
+    >
+  >,
+  Assert<Rejects<[string, string, "git.commit", { command: string }], CallArgs>>,
+  Assert<
     Rejects<
       [string, string, "file.access", { path: string; toolCallId: string; phase: "approved" }],
       EnqueueArgs

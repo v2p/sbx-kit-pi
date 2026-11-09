@@ -135,11 +135,15 @@ test("reports detailed usage after each interactive LLM turn", () => {
   ]);
 });
 
-test("adds only concise, environment-specific agent instructions", () => {
-  assert.equal(
-    capability("agent-context").config.content.trim(),
-    "This is a Docker Sandbox with Docker access and passwordless sudo.",
-  );
+test("injects host commit discovery and approval safeguards into agent context", () => {
+  const context = capability("agent-context").config.content;
+  assert.match(context, /host_git_commit/);
+  assert.match(context, /expectedHead/);
+  assert.match(context, /expectedTree/);
+  assert.match(context, /host opt-in for git\.commit and desktop approval/);
+  assert.match(context, /never request or transmit\s+a signing passphrase/);
+  assert.match(context, /do not bypass it with queue writes/);
+  assert.match(context, /never automatically retry/);
 });
 
 test("keeps the network allowlist minimal and explicit", () => {
@@ -217,6 +221,8 @@ test("launcher help works without dependencies, configuration, or Docker", () =>
     ["plan", "--help"],
     ["config", "show", "--help"],
     ["config", "alias", "--help"],
+    ["test-rpc", "--help"],
+    ["test-rpc", "git-commit", "--help"],
   ]) {
     const result = spawnSync(path.join(root, "scripts", "run"), args, {
       encoding: "utf8",

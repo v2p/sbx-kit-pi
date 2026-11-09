@@ -95,6 +95,42 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  pi.registerTool({
+    name: "host_git_commit",
+    label: "Request host Git commit",
+    description:
+      "Ask the host owner to review and commit the current staged snapshot in the launcher's host workspace. Requires opt-in git.commit permission and desktop approval. Obtain expectedHead with git rev-parse HEAD (or 'unborn' for an initial commit) and expectedTree with git write-tree after staging only the intended files. The host must match both. Uses host Git signing configuration; never request or transmit a passphrase. Does not stage, amend, push, or run Git hooks. May wait up to three minutes. On errors, cancellation or timeout inspect host Git state; never automatically retry.",
+    parameters: Type.Object({
+      message: Type.String({ minLength: 1, maxLength: 2000 }),
+      expectedHead: Type.String({ description: "Full HEAD object ID, or 'unborn'" }),
+      expectedTree: Type.String({ description: "Full staged tree object ID from git write-tree" }),
+    }),
+    async execute(_id, params, signal, _onUpdate, ctx) {
+      const target = endpoint(ctx);
+      if (!target) {
+        throw new Error("Host RPC requires a persisted session and an active host launcher");
+      }
+      const result = await callHost(target.dir, target.session, METHODS.GIT_COMMIT, params, signal);
+      if (result.status === "recorded") {
+        throw new Error(
+          "Host recorded the commit request without confirming execution. Inspect host Git state; do not automatically retry.",
+        );
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              result.status === "performed"
+                ? `Host reports commit request ${result.id} performed. No push was requested.`
+                : `Host declined commit request ${result.id}; no commit was performed by the reference handler. Do not retry unless the user requests it.`,
+          },
+        ],
+        details: result,
+      };
+    },
+  });
+
   // Observations, not enforcement: shell reads, external processes, and earlier
   // blocking handlers may not be observable. Never send file contents/errors.
   pi.on("tool_call", async (event, ctx) => {

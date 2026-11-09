@@ -15,6 +15,11 @@ test("runtime validation correlates built-in methods and parameters", () => {
   for (const request of [
     envelope("notification.send", { title: "Done", body: "Project" }),
     envelope("network.request", { host: "example.com", reason: "Review" }),
+    envelope("git.commit", {
+      message: "Subject\n\nBody",
+      expectedHead: "a".repeat(40),
+      expectedTree: "b".repeat(40),
+    }),
     envelope("file.access", { path: "/private/file", toolCallId: "read-1", phase: "success" }),
   ]) {
     assert.ok(validRequest(request));
@@ -35,7 +40,7 @@ test("runtime validation correlates built-in methods and parameters", () => {
 });
 
 test("handler results and RPC replies remain validated at runtime", () => {
-  for (const status of ["recorded", "performed"]) {
+  for (const status of ["recorded", "performed", "declined"]) {
     assert.ok(validResult({ status }));
     assert.ok(validResponse({ jsonrpc: "2.0", id: "call-1", result: { status } }));
   }

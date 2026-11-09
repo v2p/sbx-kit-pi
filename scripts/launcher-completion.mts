@@ -41,6 +41,9 @@ function complete(args: string[]): Completion {
   if (previous[0] === "completion") {
     return ["words", previous.length === 1 ? ["zsh"] : []];
   }
+  if (previous[0] === "test-rpc") {
+    return ["words", previous.length === 1 ? ["git-commit"] : []];
+  }
   if (previous[0] === "config") {
     previous.shift();
     if (previous.length === 0) {
@@ -99,7 +102,7 @@ function complete(args: string[]): Completion {
   return [
     "words",
     mode === "run" && previous.length === 0
-      ? ["config", "status", "plan", "completion", ...options]
+      ? ["config", "status", "plan", "completion", "test-rpc", ...options]
       : options,
   ];
 }

@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   METHODS,
+  DEFAULT_METHODS,
   REQUEST_FILE,
   RESPONSE_FILE,
   MAX_QUEUE_BYTES,
@@ -16,7 +17,12 @@ import {
   isMethod,
 } from "./host-rpc-protocol.mts";
 import type { HostHandlers, HostRequest, Method, Response } from "./host-rpc-protocol.mts";
-import { createHandlers, notificationAvailable } from "./host-rpc-handlers.mts";
+import {
+  COMMIT_REQUIREMENTS,
+  createHandlers,
+  notificationAvailable,
+  commitAvailable,
+} from "./host-rpc-handlers.mts";
 import type { ResolvedConfig } from "./launcher-types.mts";
 import { errorMessage } from "./runtime-validation.mts";
 
@@ -38,7 +44,6 @@ export interface ListenerOptions extends Pick<DispatcherOptions, "allowed" | "ha
   shouldStop: () => boolean;
 }
 
-const METHOD_NAMES = Object.values(METHODS);
 const MAX_CALLS = 10000;
 const MAX_LOG_BYTES = 16 * 1024 * 1024;
 const NOTIFICATION_BURST = 3;
@@ -53,7 +58,7 @@ export function allowedMethods(
   notificationAvailable: boolean,
 ): Set<Method> {
   const names =
-    value === undefined ? METHOD_NAMES : value === "off" || value === "" ? [] : value.split(",");
+    value === undefined ? DEFAULT_METHODS : value === "off" || value === "" ? [] : value.split(",");
   if (!names.every(isMethod)) {
     throw new Error("SBX_PI_HOST_RPC_ALLOW contains an unknown method");
   }
@@ -130,7 +135,13 @@ export async function createDispatcher({
           const result = await invokeHandler(handlers, request.method, request);
           response = { jsonrpc: "2.0", id, result };
         } catch {
-          response = failure(id, -32603, "Host handler failed");
+          response = failure(
+            id,
+            -32603,
+            method === METHODS.GIT_COMMIT
+              ? "Host commit failed; outcome unknown, inspect host Git state before retrying"
+              : "Host handler failed",
+          );
         }
       }
     }
@@ -263,9 +274,11 @@ export async function listen({
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   let stopping = false;
+  const controller = new AbortController();
   for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) {
     process.on(signal, () => {
       stopping = true;
+      controller.abort();
     });
   }
   const [sessionDir, logFile, sandbox, workspace, readyFile, configFile] = process.argv.slice(2);
@@ -285,18 +298,27 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     // This private file is produced by the host launcher, not the sandbox.
     const config = JSON.parse(await readFile(configFile, "utf8")) as ResolvedConfig;
     const commands = config.hostRpcHandlers;
+    const allowed = allowedMethods(
+      config.hostRpcAllow,
+      notificationAvailable(commands[METHODS.NOTIFICATION_SEND]),
+    );
+    if (allowed.has(METHODS.GIT_COMMIT) && !commitAvailable(commands[METHODS.GIT_COMMIT])) {
+      throw new Error(COMMIT_REQUIREMENTS);
+    }
     await listen({
       sessionDir,
       logFile,
       sandbox,
       workspace,
       readyFile,
-      allowed: allowedMethods(
-        config.hostRpcAllow,
-        notificationAvailable(commands[METHODS.NOTIFICATION_SEND]),
-      ),
+      allowed,
       shouldStop: () => stopping,
-      handlers: createHandlers(commands, { cwd: config.hostRpcHandlerCwd, sandbox, workspace }),
+      handlers: createHandlers(commands, {
+        cwd: config.hostRpcHandlerCwd,
+        sandbox,
+        workspace,
+        signal: controller.signal,
+      }),
     });
   } catch (error) {
     console.error(`sbx-pi host RPC: ${errorMessage(error)}`);

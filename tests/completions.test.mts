@@ -83,6 +83,9 @@ test("completion offers context-specific launcher commands and flags, not Pi arg
   assert.deepEqual(f.complete("completion", ""), ["words", "zsh"]);
   assert.deepEqual(f.complete("completion", "z"), ["words", "zsh"]);
   assert.deepEqual(f.complete("completion", "zsh", ""), ["words"]);
+  assert.ok(f.complete("").includes("test-rpc"));
+  assert.deepEqual(f.complete("test-rpc", ""), ["words", "git-commit"]);
+  assert.deepEqual(f.complete("test-rpc", "git-commit", ""), ["words"]);
   assert.deepEqual(f.complete("config", ""), ["words", "show", "alias"]);
   assert.deepEqual(f.complete("--rec"), ["words", "--recreate"]);
   for (const command of [["status"], ["plan"], ["config", "show"]]) {
@@ -220,7 +223,7 @@ test("Zsh displays help without inserting descriptions", { skip: !zshAvailable }
     const separator = output.indexOf("INSERT");
     return { labels: output.slice(0, separator), words: output.slice(separator + 1) };
   };
-  for (const input of [[""], ["--rec"], ["config", "s"], ["completion", "z"]]) {
+  for (const input of [[""], ["--rec"], ["config", "s"], ["completion", "z"], ["test-rpc", "g"]]) {
     const { labels, words } = suggest(...input);
     assert.ok(words.length > 0);
     assert.equal(labels.length, words.length);

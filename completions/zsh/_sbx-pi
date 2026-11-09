@@ -22,6 +22,7 @@ if (( CURRENT == 2 )); then
     config 'Inspect configuration or manage kit aliases'
     status 'Report sandbox status without changing it'
     completion 'Generate a Zsh autoload completion file'
+    test-rpc 'Test host RPC readiness without starting a sandbox'
   )
 elif (( CURRENT == 3 )); then
   case ${words[2]} in
@@ -32,6 +33,8 @@ elif (( CURRENT == 3 )); then
       ) ;;
     completion)
       descriptions+=(zsh 'Print Zsh completion code to stdout') ;;
+    test-rpc)
+      descriptions+=(git-commit 'Test host approval and Git signing without a repository commit') ;;
   esac
 fi
 response=("${(@f)$("${words[1]}" _complete "${(@)words[2,CURRENT]}" 2>/dev/null)}")

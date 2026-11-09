@@ -219,7 +219,7 @@ See [configuration details](docs/configuration.md) for path and write behavior.
 
 ### Sandbox-to-host requests
 
-Notifications now use a versioned, allowlisted JSON-RPC file queue. The bridge
+Sandbox-to-host requests use a versioned, allowlisted JSON-RPC file queue. The bridge
 also records domains submitted through Pi's `host_network_request` tool and
 metadata about observed Pi `read` calls in a private host-side log. Network
 requests do **not** grant access; read telemetry is **not** a tamper-proof or
@@ -240,8 +240,8 @@ SBX_PI_HOST_RPC_ALLOW=notification.send,network.request sbx-pi
 SBX_PI_HOST_RPC_ALLOW=off sbx-pi
 ```
 
-By default, all three built-in handlers are allowed. Desktop notifications work
-when `notification.send` is allowed and host `notify-send` is available
+By default, the three reporting methods are allowed; `git.commit` is opt-in.
+Desktop notifications require `notification.send` and host `notify-send`
 (`libnotify-bin` or `libnotify` on most distributions). They arrive when an agent
 job has fully settled, including retries and queued work; failures never
 interrupt Pi. To disable only notifications, omit `notification.send`:
@@ -261,6 +261,67 @@ Each method has a standalone reference handler, used by default. Commands receiv
 validated reports as JSON on stdin and return a status as JSON on stdout.
 See [Host RPC](docs/host-rpc.md#attaching-consumer-handlers) for handler configuration,
 the protocol, log location, review commands, and limitations.
+
+### Host Git commits
+
+Pi can request commits using your **host Git identity and signing configuration**.
+You review the staged snapshot in a native GTK window with a colored, read-only
+diff. Text is selectable and copyable; committing requires both checking the
+approval box and clicking **Commit**.
+
+![Native host Git review showing red deletions, green additions, and an unchecked approval box with Commit disabled](docs/images/host-git-commit-review.png)
+
+*The actual review widget displaying this project's uncommitted README diff as a
+preview; no files were staged and no commit was created for the screenshot.*
+
+To enable this optional capability on your **Linux host**:
+
+1. Install Git, Python, PyGObject and GTK 4. On Debian/Ubuntu:
+
+   ```console
+   sudo apt install git python3 python3-gi gir1.2-gtk-4.0
+   ```
+
+2. Add `git.commit` to your host-owned global TOML allowlist:
+
+   ```toml
+   [host_rpc]
+   allow = ["notification.send", "network.request", "file.access", "git.commit"]
+   ```
+
+3. From a trusted repository root in your desktop terminal, test readiness:
+
+   ```console
+   sbx-pi test-rpc git-commit
+   ```
+
+   This opens a **dry-run** review with a **Test** button and exercises Git
+   identity and configured signing using a disposable commit object outside the
+   repository. It does not change HEAD, branches, the real index or working files.
+   If signing is disabled, it reports that signing/pinentry was **not tested**.
+   This tests the reference host handler, not the live sandbox queue; custom
+   commit handlers are rejected.
+
+4. Launch or relaunch `sbx-pi` from that desktop session. Ask Pi to stage only the
+   intended changes and request a host commit using `host_git_commit`. The host
+   HEAD and staged tree must match the request; clone mode does not synchronize
+   its separate index to the host.
+
+If `commit.gpgSign` is enabled, your normal host signer runs after approval; GPG
+may show its desktop passphrase dialog. **Never enter a signing passphrase in
+Pi.** Signing is not forced when disabled in Git configuration. The handler does
+not stage, amend or push, and Git hooks are disabled. Only enable it for trusted
+repositories and Git configuration.
+
+Cancel, Escape, closing the review or its two-minute expiry declines approval.
+After any error, timeout or tool cancellation, inspect host Git state before
+requesting another commit; do not retry automatically.
+
+Host policy/handler changes need a launcher relaunch. If the running sandbox
+image lacks the tool, publish/deploy the updated image and
+[recreate the sandbox](#recreate-or-upgrade-a-sandbox), preserving sandbox-local
+data first. See [Host Git commits](docs/host-rpc.md#host-git-commits) for snapshot
+checks, troubleshooting, deadlines and cancellation details.
 
 ### Inspect configuration
 
@@ -329,4 +390,5 @@ by your Docker Sandboxes version.
 
 - [Runtime behavior](docs/runtime.md): token usage, notifications, instruction preprocessing, and persistence
 - [Configuration details](docs/configuration.md): aliases and applied state
+- [Host RPC](docs/host-rpc.md): permissions, Git review/signing, handlers, and audit logs
 - [Development](docs/development.md): checks, image builds, and releases

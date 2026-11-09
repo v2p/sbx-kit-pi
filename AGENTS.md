@@ -30,6 +30,13 @@ This repository is `sbx-kit-pi`: a Docker Sandbox kit that launches the Pi codin
 - Validate `sbx-kit-pi.yaml` with `docker build --file sbx-kit-pi.yaml .`; `sbx kit validate --offline` cannot build v3 source kits in 0.50.1. Never name v3 descriptors `spec.yaml`, which selects the legacy parser. Also test host policy/approval and fresh/existing-sandbox flows before release.
 - Keep tests focused on observable kit contracts and safety invariants. Do not add tests that mirror arbitrary file contents or implementation details; they are brittle and mostly catch intentional refactors rather than user-visible regressions.
 
+## Host RPC and commits
+
+- Read `docs/host-rpc.md` before using or changing host RPC. Notifications, network reports, and host commit requests share the session-file queue; notifications are automatic extension events, not an agent tool.
+- For a user-requested host-side commit, use `host_git_commit` when available. It requires explicit host `git.commit` permission, matching host HEAD/staged tree, and desktop approval. Stage only intended files; never transmit signing passphrases or automatically retry an uncertain outcome.
+- Distinguish checkout code from the running installation: Pi loads bundled extensions and protocol code from `/opt/sbx-kit-pi/`, while the host launcher starts its listener from its own kit directory. A missing tool does not mean the checkout lacks the feature. Inspect the installed code and host configuration before diagnosing availability; do not bypass a missing tool or host permission by manually writing queue requests.
+- Host handler/policy changes require a launcher relaunch. Bundled extension/protocol changes require deploying an updated image and recreating the sandbox for the normal image-based workflow; relaunching against an old image is insufficient. Warn that recreation deletes sandbox-local data before doing it.
+
 ## Important constraints
 
 - Keep OAuth-based `openai-codex` authentication; do not add `OPENAI_API_KEY` configuration.

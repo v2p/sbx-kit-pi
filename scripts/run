@@ -9,6 +9,7 @@ usage() {
     '       sbx-pi config show [OPTIONS]' \
     '       sbx-pi config alias NAME KIT [--replace]' \
     '       sbx-pi completion zsh' \
+    '       sbx-pi test-rpc git-commit' \
     '' \
     'Create sbxenv.yaml if needed, then create or attach to the sandbox.' \
     '' \
@@ -25,6 +26,7 @@ usage() {
     '  --config PATH        Select Pi TOML and its sibling sbxenv.yaml.' \
     '  -h, --help           Show this help without starting Docker Sandbox.' \
     '' \
+    'test-rpc git-commit tests host approval/signing without creating a repository commit.' \
     'status, plan, and config show are read-only; they do not accept kit edits.' \
     'Launcher options must precede Pi arguments; use -- to pass Pi --help.' \
     '' \
@@ -35,7 +37,8 @@ usage() {
 }
 
 if [[ ${1:-} == -h || ${1:-} == --help ]] ||
-   [[ ${1:-} == config && ( ${2:-} == -h || ${2:-} == --help ) ]]; then
+   [[ ( ${1:-} == config || ${1:-} == test-rpc ) && ( ${2:-} == -h || ${2:-} == --help ) ]] ||
+   [[ ${1:-} == test-rpc && ${2:-} == git-commit && ( ${3:-} == -h || ${3:-} == --help ) ]]; then
   usage
   exit 0
 fi
@@ -52,6 +55,12 @@ if [[ ${1:-} == completion || ${1:-} == _complete ]]; then
     exec node "$kit_dir/scripts/completion-generate.mts" "${0##*/}" "$@"
   fi
   exec node "$kit_dir/scripts/launcher-completion.mts" "$@"
+fi
+
+# Host diagnostics must not discover/write environment YAML or start Docker/Pi.
+if [[ ${1:-} == test-rpc ]]; then
+  shift
+  exec node "$kit_dir/scripts/launcher-config.mts" test-rpc "$@"
 fi
 
 recreate_existing=0

@@ -2,9 +2,13 @@
 # Keep this host policy outside sandbox-writable mounts.
 schema_version = 1
 
-# Empty allow disables the bridge; the environment variable overrides this list.
+# Empty allow disables the bridge; SBX_PI_HOST_RPC_ALLOW replaces this list.
 [host_rpc]
 allow = ["notification.send", "network.request", "file.access"]
+# Optional: append "git.commit" to allow native host review/commits for trusted repos.
+# Requires host git, python3, PyGObject and GTK 4; honors host Git signing config.
+# Test from a host desktop terminal at a trusted repo root: sbx-pi test-rpc git-commit
+# Relaunch sbx-pi after permission/handler edits. See docs/host-rpc.md for safety limits.
 
 # Illustrative references: replace these with kits you trust and can pull.
 [kit_aliases]

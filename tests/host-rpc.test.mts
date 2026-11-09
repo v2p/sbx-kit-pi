@@ -31,6 +31,7 @@ function testHandlers(
     },
     "network.request": async () => ({ status: "recorded" }),
     "file.access": async () => ({ status: "recorded" }),
+    "git.commit": async () => ({ status: "performed" }),
   };
 }
 
@@ -173,6 +174,8 @@ test("dispatcher uses only host allowed methods and validates payloads before si
   assert.deepEqual(performed, [["Done", "Project"]]);
   assert.equal(JSON.stringify(log).includes("touch /tmp/forbidden"), false);
   assert.deepEqual([...allowedMethods(undefined, false)], ["network.request", "file.access"]);
+  assert.equal(allowedMethods(undefined, true).has("git.commit"), false);
+  assert.equal(allowedMethods("git.commit", true).has("git.commit"), true);
   assert.equal(allowedMethods("off", true).size, 0);
   assert.throws(() => allowedMethods("host.exec", true), /unknown method/);
 });
@@ -431,6 +434,70 @@ test("client reports denied methods and cancellation without implying approval",
     ),
     /abort/i,
   );
+});
+
+test("commit tool waits for desktop interaction and distinguishes performed, declined and unconfirmed replies", async (t) => {
+  const params = {
+    message: "Approved subject",
+    expectedHead: "a".repeat(40),
+    expectedTree: "b".repeat(40),
+  };
+  let status: "performed" | "declined" | "recorded" = "performed";
+  const f = await running(t, {
+    allowed: new Set(["git.commit"]),
+    handlers: {
+      ...testHandlers(),
+      "git.commit": async (request) => {
+        assert.deepEqual(request.params, params);
+        if (status === "performed") {
+          await delay(5100);
+        }
+        return { status };
+      },
+    },
+  });
+  const tool = extensionHarness(extension).tools.find((tool) => tool.name === "host_git_commit")!;
+  const ctx = { sessionManager: { getSessionFile: () => path.join(f.dir, "session.jsonl") } };
+  const performed = await tool.execute("tool-1", params, undefined, undefined, ctx);
+  assert.match(JSON.stringify(performed), /Host reports commit/);
+  status = "declined";
+  assert.match(
+    JSON.stringify(await tool.execute("tool-2", params, undefined, undefined, ctx)),
+    /Host declined/,
+  );
+  status = "recorded";
+  await assert.rejects(
+    tool.execute("tool-3", params, undefined, undefined, ctx),
+    /without confirming execution/,
+  );
+  await assert.rejects(
+    tool.execute("tool-4", params, undefined, undefined, {
+      sessionManager: { getSessionFile: () => undefined },
+    }),
+    /persisted session/,
+  );
+});
+
+test("aborting an already enqueued commit reports an unknown outcome rather than claiming cancellation", async (t) => {
+  const f = await fixture(t);
+  await fs.writeFile(path.join(f.dir, REQUEST_FILE), "");
+  await fs.writeFile(path.join(f.dir, RESPONSE_FILE), "");
+  const controller = new AbortController();
+  const pending = callHost(
+    f.dir,
+    "s.jsonl",
+    "git.commit",
+    {
+      message: "Subject",
+      expectedHead: "a".repeat(40),
+      expectedTree: "b".repeat(40),
+    },
+    controller.signal,
+  );
+  const assertion = assert.rejects(pending, /outcome unknown, do not automatically retry/);
+  await waitFor(async () => (await fs.stat(path.join(f.dir, REQUEST_FILE))).size > 0);
+  controller.abort();
+  await assertion;
 });
 
 test("producers do not create unattended queues or follow queue symlinks", async (t) => {

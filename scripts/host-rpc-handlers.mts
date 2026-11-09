@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
-import { METHODS, isMethod, validResult } from "./host-rpc-protocol.mts";
+import { spawn, spawnSync } from "node:child_process";
+import { METHODS, COMMIT_TIMEOUT_MS, isMethod, validResult } from "./host-rpc-protocol.mts";
 import type { Method, HostRequest, HostHandlers, HandlerResult } from "./host-rpc-protocol.mts";
 import { isObject } from "./runtime-validation.mts";
 
@@ -14,6 +14,11 @@ const names = Object.values(METHODS);
 const MAX_HANDLERS = 8;
 const HANDLER_TIMEOUT_MS = 2000;
 const MAX_OUTPUT_BYTES = 4096;
+
+// Isolated Python ignores workspace imports and inherited PYTHONPATH/user packages.
+export const GIT_REVIEW_COMMAND: Command = ["python3", "-I", path.join(directory, "git-review.py")];
+export const COMMIT_REQUIREMENTS =
+  "git.commit requires host git, python3, PyGObject and GTK 4 (Debian/Ubuntu: python3-gi gir1.2-gtk-4.0)";
 
 export function defaultCommand(method: Method): Command {
   return [process.execPath, path.join(directory, `${method}.mts`)];
@@ -57,6 +62,9 @@ export function resolveHandlers(config: unknown = {}, cwd: string): HandlerComma
     if (!isMethod(method) || !validChain(chain)) {
       throw new Error("host_rpc handlers must contain 1–8 command arrays per built-in method");
     }
+    if (method === METHODS.GIT_COMMIT && chain.length !== 1) {
+      throw new Error("git.commit requires exactly one handler to avoid repeated commits");
+    }
     validated[method] = chain;
   }
   return Object.fromEntries(
@@ -92,16 +100,44 @@ function executableAvailable(command: string): boolean {
   });
 }
 
-export function notificationAvailable(commands: Command[]): boolean {
-  const reference = defaultCommand(METHODS.NOTIFICATION_SEND);
-  const usesReference = commands.some(
+function usesReference(commands: Command[], method: Method): boolean {
+  const reference = defaultCommand(method);
+  return commands.some(
     (command) =>
       command.length === reference.length && command.every((arg, i) => arg === reference[i]),
   );
-  return !usesReference || executableAvailable("notify-send");
 }
 
-function execute(command: Command, input: string, cwd: string, timeout: number): Promise<string> {
+export function notificationAvailable(commands: Command[]): boolean {
+  return !usesReference(commands, METHODS.NOTIFICATION_SEND) || executableAvailable("notify-send");
+}
+
+export function commitAvailable(commands: Command[]): boolean {
+  if (!usesReference(commands, METHODS.GIT_COMMIT)) {
+    return true;
+  }
+  if (!executableAvailable("git") || !executableAvailable("python3")) {
+    return false;
+  }
+  const [python, ...args] = GIT_REVIEW_COMMAND;
+  return (
+    spawnSync(python, [...args, "--check"], {
+      timeout: 2000,
+      maxBuffer: MAX_OUTPUT_BYTES,
+      stdio: ["ignore", "ignore", "pipe"],
+    }).status === 0
+  );
+}
+
+function execute(
+  command: Command,
+  input: string,
+  cwd: string,
+  timeout: number,
+  signal?: AbortSignal,
+  diagnostics?: (text: string) => void,
+): Promise<string> {
+  signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     // execFile does not forward detached to spawn. Own a real process group.
     const child = spawn(command[0], command.slice(1), {
@@ -127,13 +163,19 @@ function execute(command: Command, input: string, cwd: string, timeout: number):
       }
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
       terminate();
       child.stdin.destroy();
       child.stdout.destroy();
       child.stderr.destroy();
       reject(error);
     };
+    const abort = () => fail(new Error("Host handler aborted; outcome unknown"));
     const timer = setTimeout(() => fail(new Error("Host handler timed out")), timeout);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) {
+      abort();
+    }
     for (const stream of [child.stdout, child.stderr]) {
       let bytes = 0;
       stream.on("data", (chunk: Buffer) => {
@@ -142,6 +184,8 @@ function execute(command: Command, input: string, cwd: string, timeout: number):
           fail(new Error("Host handler output exceeds limit"));
         } else if (stream === child.stdout) {
           output.push(chunk);
+        } else {
+          diagnostics?.(chunk.toString("utf8"));
         }
       });
       stream.on("error", fail);
@@ -158,6 +202,7 @@ function execute(command: Command, input: string, cwd: string, timeout: number):
       if (!settled) {
         settled = true;
         clearTimeout(timer);
+        signal?.removeEventListener("abort", abort);
         terminate();
         resolve(Buffer.concat(output).toString("utf8"));
       }
@@ -170,23 +215,50 @@ function execute(command: Command, input: string, cwd: string, timeout: number):
 
 export function createHandlers(
   commands: HandlerCommands,
-  { cwd, sandbox, workspace }: { cwd: string; sandbox: string; workspace: string },
+  {
+    cwd,
+    sandbox,
+    workspace,
+    signal,
+    diagnostics,
+  }: {
+    cwd: string;
+    sandbox: string;
+    workspace: string;
+    signal?: AbortSignal;
+    diagnostics?: (text: string) => void;
+  },
 ): HostHandlers {
   return Object.fromEntries(
     names.map((method) => [
       method,
       async (request: HostRequest): Promise<HandlerResult> => {
         const input = JSON.stringify({ request, context: { sandbox, workspace } }) + "\n";
-        const deadline = performance.now() + HANDLER_TIMEOUT_MS;
+        const deadline =
+          performance.now() +
+          (method === METHODS.GIT_COMMIT ? COMMIT_TIMEOUT_MS : HANDLER_TIMEOUT_MS);
         let status: HandlerResult["status"] = "recorded";
         for (const command of commands[method]) {
           const remaining = Math.ceil(deadline - performance.now());
           if (remaining <= 0) {
             throw new Error("Host handler chain timed out");
           }
-          const result: unknown = JSON.parse(await execute(command, input, cwd, remaining));
+          // Shutdown cancels privileged pending commits, but still drains telemetry.
+          const result: unknown = JSON.parse(
+            await execute(
+              command,
+              input,
+              cwd,
+              remaining,
+              method === METHODS.GIT_COMMIT ? signal : undefined,
+              diagnostics,
+            ),
+          );
           if (!validResult(result)) {
             throw new Error("Invalid host handler result");
+          }
+          if (result.status === "declined") {
+            return { status: "declined" };
           }
           if (result.status === "performed") {
             status = "performed";

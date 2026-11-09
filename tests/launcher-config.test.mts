@@ -99,6 +99,9 @@ if (args[0] === 'ls') {
 test("host RPC policy is global-only with per-launch environment overrides", (t) => {
   const f = fixture(t);
   assert.equal(f.show().hostRpcAllow, "notification.send,network.request,file.access");
+  assert.equal(f.show([], { SBX_PI_HOST_RPC_ALLOW: "git.commit" }).hostRpcAllow, "git.commit");
+  fs.writeFileSync(f.global, 'schema_version = 1\n[host_rpc]\nallow = ["git.commit"]\n');
+  assert.equal(f.show().hostRpcAllow, "git.commit");
   fs.writeFileSync(f.global, 'schema_version = 1\n[host_rpc]\nallow = ["network.request"]\n');
   assert.equal(f.show().hostRpcAllow, "network.request");
   assert.equal(
@@ -128,7 +131,12 @@ test("host RPC policy is global-only with per-launch environment overrides", (t)
 test("host RPC commands use global defaults and resolve relative executables outside the workspace", (t) => {
   const f = fixture(t);
   const defaults = f.show().hostRpcHandlers;
-  assert.deepEqual(Object.keys(defaults), ["notification.send", "network.request", "file.access"]);
+  assert.deepEqual(Object.keys(defaults), [
+    "notification.send",
+    "network.request",
+    "file.access",
+    "git.commit",
+  ]);
   fs.writeFileSync(
     f.global,
     `schema_version = 1
@@ -151,6 +159,7 @@ test("host RPC commands use global defaults and resolve relative executables out
   assert.deepEqual(f.show().hostRpcHandlers, config.hostRpcHandlers);
   for (const table of [
     '"shell.run" = [["default"]]',
+    '"git.commit" = [["default"], ["default"]]',
     '"network.request" = []',
     '"network.request" = ["./script"]',
     '"network.request" = [[""]]',

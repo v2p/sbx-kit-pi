@@ -90,9 +90,11 @@ and unsupported TOML versions fail before Docker is invoked.
 ## Host RPC permissions and handlers
 
 Global `global.toml` accepts `[host_rpc]` with an optional `allow` array of built-in
-method names and a `[host_rpc.handlers]` table of per-method command chains. An empty array disables the bridge. `SBX_PI_HOST_RPC_ALLOW` is a
-host-only comma-separated per-launch override; `off` or an empty value disables
-the bridge. With neither setting, all three built-in methods are permitted.
+method names and a `[host_rpc.handlers]` table of per-method command chains. An
+empty array disables the bridge. `SBX_PI_HOST_RPC_ALLOW` is a host-only,
+comma-separated per-launch override; `off` or an empty value disables
+the bridge. With neither setting, the three reporting methods are permitted;
+`git.commit` is disabled and requires explicit host opt-in.
 Project TOML rejects `host_rpc` and cannot grant host RPC capabilities.
 Keep global configuration and handler code outside sandbox-writable mounts.
 Each method defaults to its standalone reference script. Custom chains replace
@@ -107,7 +109,24 @@ Handlers receive validated calls as JSON on stdin and return a status as JSON on
 stdout. Handler configuration does not grant method permissions. Notifications
 require `notification.send` in the allowlist; chains using its reference handler
 also require host `notify-send` availability. Omitting that method does not
-disable telemetry. Handler/policy changes require relaunching, not recreation.
+disable telemetry. The reference `git.commit` handler requires host `git`,
+`python3`, PyGObject and GTK 4 for per-commit desktop approval with a colored,
+read-only, selectable diff. Missing these dependencies while the reference commit
+handler is enabled fails launcher startup; they are not needed with `git.commit`
+disabled. Commit handlers require exactly one command, not a chain of actions.
+The reference handler honors host Git signing configuration; GPG can use graphical
+pinentry after approval. Only enable it for trusted repositories/configuration.
+
+Run `sbx-pi test-rpc git-commit` from a trusted repository root in a host desktop
+terminal to test permission, review and configured signing without creating a
+repository commit. It loads only global host RPC configuration, not project TOML
+or environment YAML; it does not start Docker/Pi or contact the live queue.
+`SBX_PI_HOST_RPC_ALLOW` still overrides the global allowlist for this command.
+See [Host Git commits](host-rpc.md#host-git-commits) before enabling it.
+
+Handler/policy changes require relaunching, not recreation. Bundled Pi extension
+or protocol changes require an updated image and sandbox recreation; save
+sandbox-local data first.
 See [Host RPC](host-rpc.md#attaching-consumer-handlers) for the command contract,
 path resolution, limits, and examples, and the rest of that document for log
 retention, protocol details, and auditing limitations.

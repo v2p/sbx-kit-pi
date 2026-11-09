@@ -37,13 +37,32 @@ validates and dispatches explicitly allowed methods, then writes a correlated
 response. The notification handler calls host `notify-send` without a shell.
 No network port is opened, and queues exist only while the listener is active.
 
-The same bridge records network review requests and observed Pi read attempts.
-See [Host RPC](host-rpc.md) for the wire format, host allowlist, review commands,
-limits, and important telemetry/security limitations.
-
 The title contains the project name; the body contains the sandbox name and,
 when set with `/name`, the Pi session name. Runtime context supplies project,
 sandbox, and session directory information without private Pi arguments.
+
+## Host RPC tools and telemetry
+
+The same bundled extension provides `host_network_request`, which records a
+concrete domain/reason without granting access, and `host_git_commit`, which asks
+the host to review and commit an already-staged snapshot. The commit method is
+**disabled by default**: it requires host `git.commit` permission, matching HEAD
+and staged tree, and explicit desktop approval in the reference GTK handler.
+The tool's presence does not imply host permission or dependency readiness.
+
+Host commits use the host's Git identity/signing configuration; no passphrase is
+sent through Pi. The handler does not stage or push. The tool waits up to 185
+seconds, but cancellation only stops waiting: it does not retract an enqueued
+request. Inspect host Git state after errors/timeouts and never automatically
+retry. Review/signing shares the sequential queue with reports, so it can delay
+notifications and network responses.
+
+The extension also queues metadata about observed Pi read attempts/results, not
+file contents. Notifications and read telemetry are automatic extension events,
+not tools the agent must call. See [Host RPC](host-rpc.md) for setup, the readiness
+test, wire format, deadlines and security/telemetry limitations. Host listener
+and handler changes require relaunching; bundled extension/protocol changes
+require an updated image and sandbox recreation, which deletes sandbox-local data.
 
 ## Docker Sandbox instruction preprocessing
 

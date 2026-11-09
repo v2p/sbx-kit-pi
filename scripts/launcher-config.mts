@@ -100,6 +100,14 @@ function globalConfigFile() {
   );
 }
 
+function hostRpcConfig(global: Partial<Preferences>, file: string) {
+  const value = process.env.SBX_PI_HOST_RPC_ALLOW ?? global.host_rpc?.allow?.join(",");
+  const hostRpcAllow = [...allowedMethods(value, true)].join(",") || "off";
+  const hostRpcHandlerCwd = fs.existsSync(file) ? path.dirname(file) : home;
+  const hostRpcHandlers = resolveHandlers(global.host_rpc?.handlers, hostRpcHandlerCwd);
+  return { hostRpcAllow, hostRpcHandlerCwd, hostRpcHandlers };
+}
+
 function createAlias(args: string[]): void {
   const replace = args.includes("--replace");
   const positional = args.filter((arg) => arg !== "--replace");
@@ -288,10 +296,7 @@ function resolve(args: string[], launch = false): ResolvedConfig {
     }
     return `./${relative.split(path.sep).join("/")}`;
   });
-  const hostRpcValue = process.env.SBX_PI_HOST_RPC_ALLOW ?? global.host_rpc?.allow?.join(",");
-  const hostRpcAllow = [...allowedMethods(hostRpcValue, true)].join(",") || "off";
-  const hostRpcHandlerCwd = fs.existsSync(globalFile) ? path.dirname(globalFile) : home;
-  const hostRpcHandlers = resolveHandlers(global.host_rpc?.handlers, hostRpcHandlerCwd);
+  const { hostRpcAllow, hostRpcHandlerCwd, hostRpcHandlers } = hostRpcConfig(global, globalFile);
   const suffix = execFileSync("git", ["hash-object", "--stdin"], {
     input: workspace,
     encoding: "utf8",
@@ -359,7 +364,16 @@ function applied(config: ResolvedConfig): AppliedConfig | null {
 
 try {
   const [command, ...args] = process.argv.slice(2);
-  if (command === "alias") {
+  if (command === "test-rpc") {
+    if (args.length !== 1 || args[0] !== "git-commit") {
+      throw new Error("Usage: sbx-pi test-rpc git-commit");
+    }
+    const file = globalConfigFile();
+    const global = fs.existsSync(file) ? load(file, true) : {};
+    const { hostRpcAllow, hostRpcHandlers, hostRpcHandlerCwd } = hostRpcConfig(global, file);
+    const { testGitCommit } = await import("./host-rpc-test.mts");
+    await testGitCommit(hostRpcAllow, hostRpcHandlers, hostRpcHandlerCwd);
+  } else if (command === "alias") {
     createAlias(args);
   } else if (["fields", "environment", "record", "compare", "forget"].includes(command)) {
     const config = JSON.parse(fs.readFileSync(args[0], "utf8")) as ResolvedConfig;
