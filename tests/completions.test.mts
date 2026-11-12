@@ -86,19 +86,22 @@ test("completion offers context-specific launcher commands and flags, not Pi arg
   assert.ok(f.complete("").includes("test-rpc"));
   assert.deepEqual(f.complete("test-rpc", ""), ["words", "git-commit"]);
   assert.deepEqual(f.complete("test-rpc", "git-commit", ""), ["words"]);
-  assert.deepEqual(f.complete("config", ""), ["words", "show", "alias"]);
+  assert.deepEqual(f.complete("config"), ["words", "config-show"]);
+  assert.deepEqual(f.complete("alias"), ["words", "alias-set"]);
+  assert.deepEqual(f.complete("status"), ["words", "status-show"]);
+  assert.deepEqual(f.complete("plan"), ["words", "plan-show"]);
   assert.deepEqual(f.complete("--rec"), ["words", "--recreate"]);
-  for (const command of [["status"], ["plan"], ["config", "show"]]) {
+  for (const command of [["status-show"], ["plan-show"], ["config-show"]]) {
     assert.equal(f.complete(...command, "--").includes("--kit"), false);
     assert.equal(f.complete(...command, "--").includes("--no-kits"), false);
   }
-  assert.deepEqual(f.complete("status", "--rec"), ["words"]);
-  assert.deepEqual(f.complete("config", "show", "--con"), ["words", "--config"]);
+  assert.deepEqual(f.complete("status-show", "--rec"), ["words"]);
+  assert.deepEqual(f.complete("config-show", "--con"), ["words", "--config"]);
   assert.deepEqual(f.complete("--config", "a file"), ["files"]);
   assert.deepEqual(f.complete("--env", "a file"), ["files"]);
   assert.deepEqual(f.complete("--env-arg", "channel="), ["words"]);
   assert.deepEqual(f.complete("--allow-host", "api."), ["words"]);
-  assert.ok(f.complete("plan", "--").includes("--env"));
+  assert.ok(f.complete("plan-show", "--").includes("--env"));
   assert.deepEqual(f.complete("--kit", "./some dir"), ["files"]);
   assert.deepEqual(f.complete("--kit", "@node", "--"), [
     "words",
@@ -115,11 +118,11 @@ test("completion offers context-specific launcher commands and flags, not Pi arg
   ]);
   assert.deepEqual(f.complete("--", "--"), ["words"]);
   assert.deepEqual(f.complete("--model", "--"), ["words"]);
-  assert.deepEqual(f.complete("--kit", "node", "").includes("config"), false);
-  assert.deepEqual(f.complete("config", "alias", ""), ["words", "node", "node_tools"]);
-  assert.deepEqual(f.complete("config", "alias", "node", ""), ["files"]);
-  assert.deepEqual(f.complete("config", "alias", "node", "kit", "--"), ["words", "--replace"]);
-  assert.deepEqual(f.complete("config", "alias", "--replace", "node", "kit", ""), ["words"]);
+  assert.deepEqual(f.complete("--kit", "node", "").includes("config-show"), false);
+  assert.deepEqual(f.complete("alias-set", ""), ["words", "node", "node_tools"]);
+  assert.deepEqual(f.complete("alias-set", "node", ""), ["files"]);
+  assert.deepEqual(f.complete("alias-set", "node", "kit", "--"), ["words", "--replace"]);
+  assert.deepEqual(f.complete("alias-set", "--replace", "node", "kit", ""), ["words"]);
   assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
   assert.equal(fs.existsSync(f.env.XDG_STATE_HOME), false);
   assert.deepEqual(fs.readdirSync(f.home), []);
@@ -137,7 +140,7 @@ test("completion reads global aliases and tolerates missing or malformed persona
   assert.deepEqual(f.complete("--kit", "@"), ["words"]);
   fs.rmSync(f.global);
   assert.deepEqual(f.complete("--kit", "@"), ["words"]);
-  assert.deepEqual(f.complete("config", "alias", ""), ["words"]);
+  assert.deepEqual(f.complete("alias-set", ""), ["words"]);
   assert.equal(fs.existsSync(f.global), false);
 });
 
@@ -200,7 +203,7 @@ test("Zsh autoload completion dispatches words versus files", { skip: !zshAvaila
     assert.equal(result.status, 0, result.stderr);
     return result.stdout.split("\0").filter(Boolean);
   };
-  assert.deepEqual(zshComplete("config", "s"), ["show"]);
+  assert.deepEqual(zshComplete("config"), ["config-show"]);
   assert.deepEqual(zshComplete("--kit", "@node_"), ["@node_tools"]);
   assert.deepEqual(zshComplete("--config", "project"), ["files"]);
   assert.deepEqual(zshComplete("--", "--"), []);
@@ -223,7 +226,7 @@ test("Zsh displays help without inserting descriptions", { skip: !zshAvailable }
     const separator = output.indexOf("INSERT");
     return { labels: output.slice(0, separator), words: output.slice(separator + 1) };
   };
-  for (const input of [[""], ["--rec"], ["config", "s"], ["completion", "z"], ["test-rpc", "g"]]) {
+  for (const input of [[""], ["--rec"], ["config"], ["completion", "z"], ["test-rpc", "g"]]) {
     const { labels, words } = suggest(...input);
     assert.ok(words.length > 0);
     assert.equal(labels.length, words.length);
@@ -232,7 +235,7 @@ test("Zsh displays help without inserting descriptions", { skip: !zshAvailable }
       assert.ok(!words[i].includes(" -- "));
     }
   }
-  const alias = suggest("config", "alias", "node");
+  const alias = suggest("alias-set", "node");
   assert.deepEqual(alias.words, ["node", "node_tools"]);
   assert.deepEqual(alias.labels, alias.words);
   assert.equal(fs.existsSync(f.env.MOCK_LOG), false);

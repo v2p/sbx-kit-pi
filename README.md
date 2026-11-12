@@ -92,7 +92,7 @@ seeded again with `--recreate --import-codex-auth`.
 For native environments, Docker owns planning, approval, and reconciliation.
 Workspace, kit, port, credential, and resource changes require recreation;
 environment/session changes follow `sbx env` behavior. Changes to the Pi kit or
-supplemental allowed hosts also require recreation. Run `sbx-pi plan` to inspect
+supplemental allowed hosts also require recreation. Run `sbx-pi plan-show` to inspect
 the native plan. The launcher does not check for new kit releases.
 
 ## Configure the sandbox
@@ -207,8 +207,8 @@ node = "docker.io/acme/node-kit:1.2.0"
 You can create aliases from the CLI:
 
 ```console
-sbx-pi config alias node docker.io/acme/node-kit:1.2.0
-sbx-pi config alias node docker.io/acme/node-kit:1.3.0 --replace
+sbx-pi alias-set node docker.io/acme/node-kit:1.2.0
+sbx-pi alias-set node docker.io/acme/node-kit:1.3.0 --replace
 sbx-pi --kit @node
 ```
 
@@ -326,17 +326,17 @@ checks, troubleshooting, deadlines and cancellation details.
 ### Inspect configuration
 
 ```console
-sbx-pi config show
-sbx-pi status
-sbx-pi plan
+sbx-pi config-show
+sbx-pi status-show
+sbx-pi plan-show
 ```
 
-`config show` emits launcher configuration as JSON without invoking Docker.
-`status` emits JSON; native environments report `not-created`, `exists`, or
+`config-show` emits launcher configuration as JSON without invoking Docker.
+`status-show` emits JSON; native environments report `not-created`, `exists`, or
 `unknown` (for parameterized names), without claiming complete drift detection.
-`plan` delegates to `sbx env plan` with the same layers used for launch; it writes
+`plan-show` delegates to `sbx env plan` with the same layers used for launch; it writes
 only the private launcher adapter, not session directories or sandbox resources.
-These commands accept configuration options. Neither `status` nor `plan` starts Pi.
+These commands accept configuration options. Neither `status-show` nor `plan-show` starts Pi.
 Docker's plan does not detect all changes inside local kits or mutable references;
 recreate explicitly when those change.
 

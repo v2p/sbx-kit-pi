@@ -4,10 +4,10 @@ set -euo pipefail
 usage() {
   printf '%s\n' \
     'Usage: sbx-pi [OPTIONS] [--] [PI_ARGS...]' \
-    '       sbx-pi status [OPTIONS]' \
-    '       sbx-pi plan [OPTIONS]' \
-    '       sbx-pi config show [OPTIONS]' \
-    '       sbx-pi config alias NAME KIT [--replace]' \
+    '       sbx-pi status-show [OPTIONS]' \
+    '       sbx-pi plan-show [OPTIONS]' \
+    '       sbx-pi config-show [OPTIONS]' \
+    '       sbx-pi alias-set NAME KIT [--replace]' \
     '       sbx-pi completion zsh' \
     '       sbx-pi test-rpc git-commit' \
     '' \
@@ -27,7 +27,7 @@ usage() {
     '  -h, --help           Show this help without starting Docker Sandbox.' \
     '' \
     'test-rpc git-commit tests host approval/signing without creating a repository commit.' \
-    'status, plan, and config show are read-only; they do not accept kit edits.' \
+    'status-show, plan-show, and config-show are read-only; they do not accept kit edits.' \
     'Launcher options must precede Pi arguments; use -- to pass Pi --help.' \
     '' \
     'Examples:' \
@@ -37,7 +37,7 @@ usage() {
 }
 
 if [[ ${1:-} == -h || ${1:-} == --help ]] ||
-   [[ ( ${1:-} == config || ${1:-} == test-rpc ) && ( ${2:-} == -h || ${2:-} == --help ) ]] ||
+   [[ ( ${1:-} == config-show || ${1:-} == alias-set || ${1:-} == status-show || ${1:-} == plan-show || ${1:-} == test-rpc ) && ( ${2:-} == -h || ${2:-} == --help ) ]] ||
    [[ ${1:-} == test-rpc && ${2:-} == git-commit && ( ${3:-} == -h || ${3:-} == --help ) ]]; then
   usage
   exit 0
@@ -95,18 +95,9 @@ cleanup_host_state() {
 }
 trap cleanup_host_state EXIT
 
-if [[ ${1:-} == config && ${2:-} == show ]]; then
-  config_command=show
-  shift 2
-elif [[ ${1:-} == config && ${2:-} == alias ]]; then
-  config_command=alias
-  shift 2
-elif [[ ${1:-} == status || ${1:-} == plan ]]; then
+if [[ ${1:-} == config-show || ${1:-} == alias-set || ${1:-} == status-show || ${1:-} == plan-show ]]; then
   config_command=$1
   shift
-elif [[ ${1:-} == config ]]; then
-  printf '%s\n' 'Usage: sbx-pi config show [OPTIONS] | config alias NAME KIT [--replace]' >&2
-  exit 2
 fi
 
 if [[ ${1:-} == -h || ${1:-} == --help ]]; then
@@ -114,7 +105,7 @@ if [[ ${1:-} == -h || ${1:-} == --help ]]; then
   exit 0
 fi
 
-while [[ $config_command != alias ]] && (( $# )); do
+while [[ $config_command != alias-set ]] && (( $# )); do
   case $1 in
     -h|--help)
       usage
@@ -182,10 +173,10 @@ while [[ $config_command != alias ]] && (( $# )); do
   esac
 done
 
-if [[ $config_command == alias ]]; then
-  exec node "$kit_dir/scripts/launcher-config.mts" alias "$@"
+if [[ $config_command == alias-set ]]; then
+  exec node "$kit_dir/scripts/launcher-config.mts" alias-set "$@"
 fi
-if [[ $config_command != resolve && $config_command != plan ]]; then
+if [[ $config_command != resolve && $config_command != plan-show ]]; then
   if (( $# || recreate_existing || import_codex_auth )); then
     printf 'Unexpected arguments for %s\n' "$config_command" >&2
     exit 2
@@ -195,7 +186,7 @@ fi
 
 config_file=$(mktemp)
 resolution_command=launch
-if [[ $config_command == plan ]]; then
+if [[ $config_command == plan-show ]]; then
   resolution_command=resolve
 fi
 node "$kit_dir/scripts/launcher-config.mts" "$resolution_command" "${config_args[@]}" > "$config_file"
@@ -212,9 +203,9 @@ session_dir="$HOME/pi-sessions-backup/${project_name}-${workspace_hash:0:12}"
 cd "$workspace"
 skills_dir="$session_dir/skills"
 
-if [[ $config_command == plan ]]; then
+if [[ $config_command == plan-show ]]; then
   if (( $# || recreate_existing || import_codex_auth )); then
-    printf '%s\n' 'plan requires sbxenv.yaml and accepts only configuration options' >&2
+    printf '%s\n' 'plan-show requires sbxenv.yaml and accepts only configuration options' >&2
     exit 2
   fi
   node "$kit_dir/scripts/launcher-config.mts" environment "$config_file" "$session_dir" > "$protocol_file"

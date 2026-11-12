@@ -17,6 +17,7 @@ This repository is `sbx-kit-pi`: a Docker Sandbox kit that launches the Pi codin
 - This is a single-user project. Update the checkout, tooling, and sandbox together; do not maintain compatibility for hypothetical legacy users.
 - Replace obsolete behavior in place. Remove superseded code, tests, and documentation instead of adding version detection, fallback branches, compatibility aliases, dual configuration paths, automatic migrations, or deprecation periods unless explicitly requested.
 - Document the current requirements and canonical workflow, not upgrade history or speculative future migrations. Git history records past behavior.
+- Name resource/action launcher commands as flat, hyphenated noun–verb pairs: `config-show`, `alias-set`, `status-show`, and `plan-show`. Follow this convention for new resource/action commands; avoid nested command groups such as `config show` or vague standalone verbs such as `show`. Keep help, completions, tests, and documentation aligned with the canonical names.
 - Simplicity does not remove safety requirements: retain validation, approval boundaries, preservation of user options/data, and warnings about destructive operations. Test current observable behavior rather than emulating obsolete upstream releases.
 
 ## Development workflow

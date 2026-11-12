@@ -217,10 +217,10 @@ test("launcher help works without dependencies, configuration, or Docker", () =>
   for (const args of [
     ["--help"],
     ["-h"],
-    ["status", "--help"],
-    ["plan", "--help"],
-    ["config", "show", "--help"],
-    ["config", "alias", "--help"],
+    ["status-show", "--help"],
+    ["plan-show", "--help"],
+    ["config-show", "--help"],
+    ["alias-set", "--help"],
     ["test-rpc", "--help"],
     ["test-rpc", "git-commit", "--help"],
   ]) {

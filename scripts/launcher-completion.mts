@@ -44,20 +44,11 @@ function complete(args: string[]): Completion {
   if (previous[0] === "test-rpc") {
     return ["words", previous.length === 1 ? ["git-commit"] : []];
   }
-  if (previous[0] === "config") {
-    previous.shift();
-    if (previous.length === 0) {
-      return ["words", ["show", "alias"]];
-    }
-    mode = previous.shift()!;
-    if (!["show", "alias"].includes(mode)) {
-      return ["words", []];
-    }
-  } else if (["status", "plan"].includes(previous[0])) {
+  if (["config-show", "alias-set", "status-show", "plan-show"].includes(previous[0])) {
     mode = previous.shift()!;
   }
 
-  if (mode === "alias") {
+  if (mode === "alias-set") {
     const positional = previous.filter((arg) => arg !== "--replace");
     if (positional.length > 2 || positional.some((arg) => arg.startsWith("--"))) {
       return ["words", []];
@@ -102,7 +93,15 @@ function complete(args: string[]): Completion {
   return [
     "words",
     mode === "run" && previous.length === 0
-      ? ["config", "status", "plan", "completion", "test-rpc", ...options]
+      ? [
+          "config-show",
+          "alias-set",
+          "status-show",
+          "plan-show",
+          "completion",
+          "test-rpc",
+          ...options,
+        ]
       : options,
   ];
 }

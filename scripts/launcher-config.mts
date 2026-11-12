@@ -112,7 +112,7 @@ function createAlias(args: string[]): void {
   const replace = args.includes("--replace");
   const positional = args.filter((arg) => arg !== "--replace");
   if (positional.length !== 2 || args.length !== positional.length + Number(replace)) {
-    throw new Error("Usage: sbx-pi config alias NAME KIT [--replace]");
+    throw new Error("Usage: sbx-pi alias-set NAME KIT [--replace]");
   }
   const [name, reference] = positional;
   if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
@@ -125,7 +125,7 @@ function createAlias(args: string[]): void {
     throw new Error("Aliases cannot reference aliases");
   }
   if (name.startsWith("--") || reference.startsWith("--")) {
-    throw new Error("Usage: sbx-pi config alias NAME KIT [--replace]");
+    throw new Error("Usage: sbx-pi alias-set NAME KIT [--replace]");
   }
   // Unlike hand-written global TOML, command-line paths are invocation-relative.
   const ref =
@@ -373,7 +373,7 @@ try {
     const { hostRpcAllow, hostRpcHandlers, hostRpcHandlerCwd } = hostRpcConfig(global, file);
     const { testGitCommit } = await import("./host-rpc-test.mts");
     await testGitCommit(hostRpcAllow, hostRpcHandlers, hostRpcHandlerCwd);
-  } else if (command === "alias") {
+  } else if (command === "alias-set") {
     createAlias(args);
   } else if (["fields", "environment", "record", "compare", "forget"].includes(command)) {
     const config = JSON.parse(fs.readFileSync(args[0], "utf8")) as ResolvedConfig;
@@ -415,9 +415,9 @@ try {
     }
   } else {
     const config = resolve(args, command === "launch");
-    if (command === "resolve" || command === "show" || command === "launch") {
+    if (command === "resolve" || command === "config-show" || command === "launch") {
       console.log(JSON.stringify(config, null, 2));
-    } else if (command === "status") {
+    } else if (command === "status-show") {
       const names = execFileSync("sbx", ["ls", "-q"], { encoding: "utf8" }).split(/\r?\n/);
       console.log(
         JSON.stringify(
@@ -432,7 +432,7 @@ try {
                   : "not-created",
             managedBy: "sbx env",
             environmentFiles: config.environmentFiles,
-            hint: "Use sbx-pi plan to inspect Docker's environment plan; creation-only changes require --recreate.",
+            hint: "Use sbx-pi plan-show to inspect Docker's environment plan; creation-only changes require --recreate.",
           },
           null,
           2,

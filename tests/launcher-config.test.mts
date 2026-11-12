@@ -78,12 +78,12 @@ if (args[0] === 'ls') {
       encoding: "utf8",
     });
   const show = (args: string[] = [], overrides: NodeJS.ProcessEnv = {}): ResolvedConfig => {
-    const result = run(["config", "show", ...args], overrides);
+    const result = run(["config-show", ...args], overrides);
     assert.equal(result.status, 0, result.stderr);
     return JSON.parse(result.stdout);
   };
   const status = (): ConfigStatus => {
-    const result = run(["status"]);
+    const result = run(["status-show"]);
     assert.equal(result.status, 0, result.stderr);
     return JSON.parse(result.stdout);
   };
@@ -111,20 +111,20 @@ test("host RPC policy is global-only with per-launch environment overrides", (t)
   for (const value of ["off", ""]) {
     assert.equal(f.show([], { SBX_PI_HOST_RPC_ALLOW: value }).hostRpcAllow, "off");
   }
-  assert.notEqual(f.run(["config", "show"], { SBX_PI_HOST_RPC_ALLOW: "shell.run" }).status, 0);
+  assert.notEqual(f.run(["config-show"], { SBX_PI_HOST_RPC_ALLOW: "shell.run" }).status, 0);
   fs.writeFileSync(f.global, "schema_version = 1\n[host_rpc]\nallow = []\n");
   assert.equal(f.show().hostRpcAllow, "off");
   assert.equal(f.run().status, 0);
   assert.equal(fs.existsSync(path.join(f.env.XDG_STATE_HOME, "sbx-pi", "host-rpc")), false);
   fs.writeFileSync(f.manifest, "schema_version = 1\n[host_rpc]\nallow = []\n");
   assert.match(
-    f.run(["config", "show", "--config", "../sbx-pi.toml"]).stderr,
+    f.run(["config-show", "--config", "../sbx-pi.toml"]).stderr,
     /unknown setting host_rpc/,
   );
   fs.rmSync(f.manifest);
   for (const allow of ['["shell.run"]', '"off"']) {
     fs.writeFileSync(f.global, `schema_version = 1\n[host_rpc]\nallow = ${allow}\n`);
-    assert.match(f.run(["config", "show"]).stderr, /host_rpc must contain/);
+    assert.match(f.run(["config-show"]).stderr, /host_rpc must contain/);
   }
 });
 
@@ -155,7 +155,7 @@ test("host RPC commands use global defaults and resolve relative executables out
   assert.deepEqual(config.hostRpcHandlers["file.access"], defaults["file.access"]);
   assert.equal(config.hostRpcAllow, "notification.send,network.request,file.access");
   assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
-  assert.equal(f.run(["config", "alias", "node", "docker.io/acme/node:1"]).status, 0);
+  assert.equal(f.run(["alias-set", "node", "docker.io/acme/node:1"]).status, 0);
   assert.deepEqual(f.show().hostRpcHandlers, config.hostRpcHandlers);
   for (const table of [
     '"shell.run" = [["default"]]',
@@ -167,7 +167,7 @@ test("host RPC commands use global defaults and resolve relative executables out
     '"network.request" = [["command\\nargument"]]',
   ]) {
     fs.writeFileSync(f.global, `schema_version = 1\n[host_rpc.handlers]\n${table}\n`);
-    assert.equal(f.run(["config", "show"]).status, 2, table);
+    assert.equal(f.run(["config-show"]).status, 2, table);
   }
 });
 
@@ -218,13 +218,13 @@ if (process.argv[2] === 'env' && process.argv[3] === 'exec') {
 test("alias writes preserve global host policy", (t) => {
   const f = fixture(t);
   fs.writeFileSync(f.global, 'schema_version = 1\n[host_rpc]\nallow = ["file.access"]\n');
-  assert.equal(f.run(["config", "alias", "node", "docker.io/acme/node:1"]).status, 0);
+  assert.equal(f.run(["alias-set", "node", "docker.io/acme/node:1"]).status, 0);
   assert.equal(f.show().hostRpcAllow, "file.access");
 });
 
-test("config alias saves global aliases without invoking sbx", (t) => {
+test("alias-set saves global aliases without invoking sbx", (t) => {
   const f = fixture(t);
-  const result = f.run(["config", "alias", "node", "docker.io/acme/node:1"]);
+  const result = f.run(["alias-set", "node", "docker.io/acme/node:1"]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Saved @node/);
   assert.deepEqual(
@@ -235,20 +235,20 @@ test("config alias saves global aliases without invoking sbx", (t) => {
   assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
 });
 
-test("config alias preserves global settings, resolves CLI paths, and requires explicit replacement", (t) => {
+test("alias-set preserves global settings, resolves CLI paths, and requires explicit replacement", (t) => {
   const f = fixture(t);
   fs.writeFileSync(
     f.global,
     'schema_version = 1\n[host_rpc]\nallow = []\n[kit_aliases]\nnode = "docker.io/acme/node:1"',
   );
   const original = fs.readFileSync(f.global, "utf8");
-  const refused = f.run(["config", "alias", "node", "docker.io/acme/node:2"]);
+  const refused = f.run(["alias-set", "node", "docker.io/acme/node:2"]);
   assert.equal(refused.status, 2);
   assert.match(refused.stderr, /already exists; use --replace/);
   assert.equal(fs.readFileSync(f.global, "utf8"), original);
-  const replaced = f.run(["config", "alias", "node", "docker.io/acme/node:2", "--replace"]);
+  const replaced = f.run(["alias-set", "node", "docker.io/acme/node:2", "--replace"]);
   assert.equal(replaced.status, 0, replaced.stderr);
-  const local = f.run(["config", "alias", "local", './kits/tools "quoted"']);
+  const local = f.run(["alias-set", "local", './kits/tools "quoted"']);
   assert.equal(local.status, 0, local.stderr);
   const config = parse(fs.readFileSync(f.global, "utf8")) as unknown as Preferences;
   assert.deepEqual(config.host_rpc?.allow, []);
@@ -258,7 +258,7 @@ test("config alias preserves global settings, resolves CLI paths, and requires e
   assert.equal(fs.existsSync(`${f.global}.lock`), false);
 });
 
-test("config alias validates arguments and configuration without changing existing files", (t) => {
+test("alias-set validates arguments and configuration without changing existing files", (t) => {
   const f = fixture(t);
   const original = "schema_version = 1\n[host_rpc]\nallow = []";
   fs.writeFileSync(f.global, original);
@@ -274,7 +274,7 @@ test("config alias validates arguments and configuration without changing existi
     ["node", "kit", "--replace", "--replace"],
     ["--kit", "kit"],
   ]) {
-    assert.equal(f.run(["config", "alias", ...args]).status, 2, JSON.stringify(args));
+    assert.equal(f.run(["alias-set", ...args]).status, 2, JSON.stringify(args));
     assert.equal(fs.readFileSync(f.global, "utf8"), original);
   }
   for (const source of [
@@ -283,24 +283,24 @@ test("config alias validates arguments and configuration without changing existi
     "schema_version = 1\nunknown = true",
   ]) {
     fs.writeFileSync(f.global, source);
-    assert.equal(f.run(["config", "alias", "node", "kit"]).status, 2);
+    assert.equal(f.run(["alias-set", "node", "kit"]).status, 2);
     assert.equal(fs.readFileSync(f.global, "utf8"), source);
     assert.equal(fs.existsSync(`${f.global}.lock`), false);
   }
   assert.equal(fs.existsSync(f.env.MOCK_LOG), false);
 });
 
-test("config alias refuses locked files and symlinks without touching their targets", (t) => {
+test("alias-set refuses locked files and symlinks without touching their targets", (t) => {
   const f = fixture(t);
   fs.writeFileSync(`${f.global}.lock`, "another writer");
-  assert.equal(f.run(["config", "alias", "node", "kit"]).status, 2);
+  assert.equal(f.run(["alias-set", "node", "kit"]).status, 2);
   assert.equal(fs.readFileSync(`${f.global}.lock`, "utf8"), "another writer");
   assert.equal(fs.existsSync(f.global), false);
   fs.rmSync(`${f.global}.lock`);
   const target = path.join(f.dir, "target.toml");
   fs.writeFileSync(target, "schema_version = 1");
   fs.symlinkSync(target, f.global);
-  assert.equal(f.run(["config", "alias", "node", "kit"]).status, 2);
+  assert.equal(f.run(["alias-set", "node", "kit"]).status, 2);
   assert.equal(fs.readlinkSync(f.global), target);
   assert.equal(fs.readFileSync(target, "utf8"), "schema_version = 1");
   assert.equal(fs.existsSync(`${f.global}.lock`), false);
@@ -431,8 +431,8 @@ test("inspection never creates project configuration and rejects mutation option
   const file = path.join(f.subdir, "sbxenv.yaml");
   assert.equal(f.show().workspace, f.subdir);
   assert.equal(f.status().status, "not-created");
-  assert.equal(f.run(["plan"]).status, 2);
-  for (const command of [["config", "show"], ["status"], ["plan"]]) {
+  assert.equal(f.run(["plan-show"]).status, 2);
+  for (const command of [["config-show"], ["status-show"], ["plan-show"]]) {
     for (const option of [["--kit", "tools"], ["--no-kits"]]) {
       const result = f.run([...command, ...option]);
       assert.equal(result.status, 2);
@@ -455,7 +455,7 @@ test("installed user command resolves configuration from a different project", (
     encoding: "utf8",
   });
   assert.equal(install.status, 0, install.stderr);
-  const result = spawnSync(path.join(bindir, "sbx-pi"), ["config", "show"], {
+  const result = spawnSync(path.join(bindir, "sbx-pi"), ["config-show"], {
     cwd: f.subdir,
     env: f.env,
     encoding: "utf8",
@@ -759,10 +759,10 @@ test("explicit native layers and arguments are passed to Docker without local ex
   }
 });
 
-test("native plan delegates to Docker without starting Pi or creating session directories", (t) => {
+test("plan-show delegates to Docker without starting Pi or creating session directories", (t) => {
   const f = fixture(t);
   fs.writeFileSync(path.join(f.workspace, "sbxenv.yaml"), 'schemaVersion: "1"\n');
-  const result = f.run(["plan"]);
+  const result = f.run(["plan-show"]);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(fs.existsSync(path.join(f.env.HOME, "pi-sessions-backup")), false);
   assert.equal(fs.existsSync(f.env.MOCK_STATE), false);

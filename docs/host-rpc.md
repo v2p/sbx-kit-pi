@@ -228,7 +228,7 @@ Configure ordered command chains in global TOML:
   the global TOML directory; bare names use the host `PATH`. That directory is
   also the working directory for relative arguments (the host home when no
   global file exists). Prefer absolute paths for interpreters/scripts.
-- `sbx-pi config show` exposes `hostRpcHandlers` and `hostRpcHandlerCwd` without
+- `sbx-pi config-show` exposes `hostRpcHandlers` and `hostRpcHandlerCwd` without
   executing handlers.
 
 The listener validates calls, checks permissions, deduplicates IDs, applies rate

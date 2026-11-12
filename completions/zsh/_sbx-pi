@@ -18,19 +18,15 @@ descriptions=(
 )
 if (( CURRENT == 2 )); then
   descriptions+=(
-    plan 'Inspect Docker environment changes without applying them'
-    config 'Inspect configuration or manage kit aliases'
-    status 'Report sandbox status without changing it'
+    plan-show 'Inspect Docker environment changes without applying them'
+    config-show 'Print resolved configuration as JSON'
+    alias-set 'Save a named kit alias in global configuration'
+    status-show 'Report sandbox status without changing it'
     completion 'Generate a Zsh autoload completion file'
     test-rpc 'Test host RPC readiness without starting a sandbox'
   )
 elif (( CURRENT == 3 )); then
   case ${words[2]} in
-    config)
-      descriptions+=(
-        show 'Print resolved configuration as JSON'
-        alias 'Save a named kit alias in global configuration'
-      ) ;;
     completion)
       descriptions+=(zsh 'Print Zsh completion code to stdout') ;;
     test-rpc)

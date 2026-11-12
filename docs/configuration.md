@@ -17,7 +17,7 @@ Every launch uses native YAML. If discovery finds no configuration, launch creat
 `sbxenv.yaml` in the current directory. If only Pi TOML exists, launch creates YAML
 beside it. Explicit `--env` files must already exist. Generated files select
 `workspace: .`, the Pi agent, and an empty mixin list unless `--kit` is supplied.
-Read-only `config show`, `status`, and `plan` never create project files; planning
+Read-only `config-show`, `status-show`, and `plan-show` never create project files; planning
 requires existing YAML.
 
 The first YAML file's directory is the project configuration directory, used for
@@ -48,7 +48,7 @@ for shared settings.
 `--env-arg` and `--env-args-file` are forwarded to every native operation. Docker
 owns argument expansion, deep merging, validation, resource reconciliation, and
 approval. The launcher never supplies `--force` for planning or provisioning.
-`sbx-pi plan` uses `sbx env plan`; `--recreate` removes resources with
+`sbx-pi plan-show` uses `sbx env plan`; `--recreate` removes resources with
 `sbx env rm --force`, then runs the current environment. Forced removal is requested only by `--recreate`.
 
 Launch uses `sbx env run --detach`, followed by `sbx env exec` with the kit's
@@ -57,9 +57,9 @@ passthrough. An interactive terminal is allocated when stdin/stdout are terminal
 Verify this flow on the host's experimental `sbx` release, including OAuth login
 and session environment values.
 
-`status` lists sandboxes and reports `not-created` or `exists` for literal names,
+`status-show` lists sandboxes and reports `not-created` or `exists` for literal names,
 and `unknown` for names requiring Docker argument expansion. It does not claim
-native configuration is current: inspect `plan`. Workspace, kit, port, credential,
+native configuration is current: inspect `plan-show`. Workspace, kit, port, credential,
 and resource changes take effect on recreation. Local kit contents and mutable
 references may change without a detectable plan difference.
 
@@ -133,7 +133,7 @@ retention, protocol details, and auditing limitations.
 
 ## Aliases and saved kit selections
 
-`sbx-pi config alias NAME KIT [--replace]` writes personal configuration at
+`sbx-pi alias-set NAME KIT [--replace]` writes personal configuration at
 `$XDG_CONFIG_HOME/sbx-pi/global.toml` (default `~/.config/sbx-pi/global.toml`).
 Names contain letters, digits, underscores, or hyphens, without `@`. Existing
 names require `--replace`; aliases cannot reference aliases. CLI local paths are
@@ -163,7 +163,7 @@ saved but launch stops with a recreation instruction. Parameterized names also
 require explicit `--recreate` when CLI kit selections change, since the launcher
 cannot safely check existence. `--recreate --kit ...` saves and applies together.
 Recreation always requires that explicit flag and deletes sandbox-local changes.
-Manually edited YAML is reconciled by Docker; inspect `sbx-pi plan` before applying.
+Manually edited YAML is reconciled by Docker; inspect `sbx-pi plan-show` before applying.
 
 The generated file expects `sbx-pi` to add its Pi kit; to use `sbx env` directly,
 include this checkout as a kit and configure session persistence yourself.
