@@ -50,4 +50,5 @@ exec pi \
   --extension /opt/sbx-kit-pi/extensions/agents-postprocessor.ts \
   --extension /opt/sbx-kit-pi/extensions/host-rpc.ts \
   --extension /opt/sbx-kit-pi/extensions/token-usage.ts \
+  --skill /opt/sbx-kit-pi/skills/host-git-commit \
   "${pi_args[@]}"

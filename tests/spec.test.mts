@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import * as YAML from "yaml";
+import { loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
 import tokenUsage from "../extensions/token-usage.ts";
 import { extensionHarness } from "./helpers/extension-harness.mts";
 
@@ -72,6 +73,8 @@ test("the image entrypoint applies Pi defaults and preserves caller overrides", 
     "/opt/sbx-kit-pi/extensions/host-rpc.ts",
     "--extension",
     "/opt/sbx-kit-pi/extensions/token-usage.ts",
+    "--skill",
+    "/opt/sbx-kit-pi/skills/host-git-commit",
     "--model",
     "custom-model",
     "prompt with spaces",
@@ -135,15 +138,28 @@ test("reports detailed usage after each interactive LLM turn", () => {
   ]);
 });
 
-test("injects host commit discovery and approval safeguards into agent context", () => {
+test("routes user-requested commits to the bundled skill and host RPC tool", () => {
   const context = capability("agent-context").config.content;
+  assert.match(context, /host-git-commit/);
   assert.match(context, /host_git_commit/);
-  assert.match(context, /expectedHead/);
-  assert.match(context, /expectedTree/);
-  assert.match(context, /host opt-in for git\.commit and desktop approval/);
-  assert.match(context, /never request or transmit\s+a signing passphrase/);
-  assert.match(context, /do not bypass it with queue writes/);
-  assert.match(context, /never automatically retry/);
+});
+
+test("the host commit skill is discoverable when distributed independently", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-pi-skill-"));
+  try {
+    const skillDirectory = path.join(directory, "host-git-commit");
+    fs.cpSync(path.join(root, "skills/host-git-commit"), skillDirectory, { recursive: true });
+    const result = loadSkillsFromDir({ dir: directory, source: "path" });
+    assert.deepEqual(result.diagnostics, []);
+    assert.equal(result.skills.length, 1);
+    const [skill] = result.skills;
+    assert.equal(skill.name, path.basename(skillDirectory));
+    assert.equal(skill.filePath, path.join(skillDirectory, "SKILL.md"));
+    assert.equal(skill.disableModelInvocation, false);
+    assert.match(skill.description, /commit/i);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("keeps the network allowlist minimal and explicit", () => {

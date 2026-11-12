@@ -116,6 +116,12 @@ GPG may unlock/cache the host key as a side effect of a successful signing test.
 
 ### Request a commit from Pi
 
+The image loads the distributable
+[`host-git-commit` skill](../skills/host-git-commit/SKILL.md) for this workflow.
+Use `/skill:host-git-commit` to load it explicitly. The skill can be copied to
+another Agent Skills directory, but it does not provide the RPC implementation
+or enable host permission. See [sharing the skill](../README.md#share-the-host-commit-skill).
+
 Pi's `host_git_commit` tool takes a commit message, the full current HEAD object
 ID (`git rev-parse HEAD`, or `unborn` for the initial commit), and the full staged
 tree object ID (`git write-tree`). Stage only intended changes first. The host

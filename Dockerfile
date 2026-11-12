@@ -26,6 +26,7 @@ RUN npm ci --prefix /opt/sbx-kit-pi/runtime --omit=dev --ignore-scripts --no-aud
     && npm cache clean --force
 
 COPY --chown=1000:1000 extensions/ /opt/sbx-kit-pi/extensions/
+COPY --chown=1000:1000 skills/ /opt/sbx-kit-pi/skills/
 COPY --chown=1000:1000 scripts/container-entrypoint scripts/import-codex-auth.mts scripts/host-rpc-protocol.mts scripts/runtime-validation.mts scripts/node-environment scripts/check-pi-runtime.mts /opt/sbx-kit-pi/scripts/
 
 # Applies to Pi and subsequent Bash tool calls, preserving caller NODE_OPTIONS.

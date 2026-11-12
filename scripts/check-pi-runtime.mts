@@ -54,6 +54,14 @@ const loaded = await loadExtensions(extensionPaths, process.cwd());
 assert.deepEqual(loaded.errors, []);
 assert.equal(loaded.extensions.length, extensionPaths.length);
 
+const { loadSkillsFromDir } = await import(moduleUrl("core/skills.js"));
+const skillDirectory = fileURLToPath(new URL("../skills/host-git-commit/", import.meta.url));
+const skills = loadSkillsFromDir({ dir: skillDirectory, source: "path" });
+assert.deepEqual(skills.diagnostics, []);
+assert.equal(skills.skills.length, 1);
+assert.equal(skills.skills[0].name, "host-git-commit");
+assert.equal(skills.skills[0].disableModelInvocation, false);
+
 // Pi installs npm Undici's fetch and its environment-proxy dispatcher together.
 // Only the local smoke server bypasses the ambient proxy, inside this process.
 process.env.NO_PROXY = `${process.env.NO_PROXY ?? process.env.no_proxy ?? ""},127.0.0.1`;
@@ -83,4 +91,6 @@ try {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await undici.getGlobalDispatcher().close();
 }
-console.log("Pi runtime: patched dependencies, model globs, extensions, and HTTP transport OK");
+console.log(
+  "Pi runtime: patched dependencies, model globs, extensions, skills, and HTTP transport OK",
+);

@@ -17,20 +17,10 @@ capabilities:
 
         ## Host Git commits
 
-        For a user-requested commit using the Docker Host's Git identity and signing
-        configuration, use the host_git_commit tool when available. It requires
-        host opt-in for git.commit and desktop approval; never request or transmit
-        a signing passphrase. If the tool is missing or permission is denied,
-        explain that host setup is required; do not bypass it with queue writes.
-
-        Stage only intended files, then obtain expectedHead with git rev-parse HEAD
-        (use "unborn" for an initial commit) and expectedTree with git write-tree.
-        Call host_git_commit with message, expectedHead and expectedTree. The host
-        HEAD and staged tree must match: direct mode shares Git state, but a clone's
-        index is separate and this tool does not synchronize it. The tool requests
-        review and commits only the approved snapshot; it does not stage or push.
-        After an error, cancellation or timeout, inspect host Git state before any
-        further request; never automatically retry. Respect a declined approval.
+        For user-requested Git commits, load the bundled host-git-commit skill
+        and use host_git_commit for host review, identity and signing. Never
+        bypass host permission or desktop approval, transmit signing passphrases,
+        or automatically retry an uncertain commit.
   - type: com.docker.sandbox/network-policy@1
     config:
       runtime:

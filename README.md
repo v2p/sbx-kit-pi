@@ -323,6 +323,27 @@ image lacks the tool, publish/deploy the updated image and
 data first. See [Host Git commits](docs/host-rpc.md#host-git-commits) for snapshot
 checks, troubleshooting, deadlines and cancellation details.
 
+### Share the host commit skill
+
+[`skills/host-git-commit/`](skills/host-git-commit/SKILL.md) is a self-contained
+Agent Skill. The image loads it automatically; invoke it explicitly with:
+
+```text
+/skill:host-git-commit commit the intended changes
+```
+
+To share it independently, copy the whole directory into `~/.pi/agent/skills/`
+(or another agent's Agent Skills directory). For a one-session Pi trial from a
+checkout, without changing settings:
+
+```console
+pi --skill ./skills/host-git-commit
+```
+
+The skill supplies the safe staging, snapshot, approval and recovery procedure;
+it does **not** install the RPC tool, start a listener or grant host permission.
+It requires the [host commit setup](docs/host-rpc.md#host-git-commits) above.
+
 ### Inspect configuration
 
 ```console
